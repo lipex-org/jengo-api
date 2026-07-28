@@ -102,6 +102,27 @@ final class ApiControllerTest extends TestCase
         $this->assertSame(50, $config['max_limit']);
     }
 
+    public function testMakeApiResourceCommand(): void
+    {
+        command('jengo:make api_resource UserConfigResource');
+
+        $expectedFile = APPPATH . 'Api/UserConfigResource.php';
+        $this->assertFileExists($expectedFile);
+
+        $content = file_get_contents($expectedFile);
+        $this->assertStringContainsString('class UserConfigResource extends ResourceConfig', $content);
+        $this->assertStringContainsString("return 'userconfig';", $content);
+
+        // Cleanup
+        if (file_exists($expectedFile)) {
+            unlink($expectedFile);
+        }
+        $dir = APPPATH . 'Api';
+        if (is_dir($dir)) {
+            rmdir($dir);
+        }
+    }
+
     private function cleanFileSystem(): void
     {
         $publishedConfig = APPPATH . 'Config/JengoApi.php';
