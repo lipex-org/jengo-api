@@ -44,8 +44,7 @@ class ApiResourceVariant extends AbstractGeneratorVariant
     {
         $templatePath = dirname(dirname(dirname(__DIR__))) . '/Commands/Generators/Views/api_resource.tpl.php';
         $content = file_get_contents($templatePath);
-        fwrite(STDERR, "Template path: $templatePath\n");
-        fwrite(STDERR, "Template content: $content\n");
+
 
         $parts = explode('\\', $class);
         $className = end($parts);

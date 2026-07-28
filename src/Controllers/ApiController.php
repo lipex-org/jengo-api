@@ -6,6 +6,7 @@ namespace Jengo\Api\Controllers;
 
 use CodeIgniter\API\ResponseTrait;
 use CodeIgniter\Controller;
+use Jengo\Api\Contracts\ResourceConfigInterface;
 use Jengo\Api\Exceptions\ApiException;
 use Jengo\Api\Services\RequestProcessor;
 use Jengo\Schema\Query\Enums\QueryMode;
@@ -22,13 +23,23 @@ class ApiController extends Controller
         try {
             RequestProcessor::process($resource, 'get', $this->request);
 
-            $result = query($resource)
-                ->mode(QueryMode::OPEN)
-                ->get();
+            $query = query($resource)->mode(QueryMode::OPEN);
+            
+            $instance = self::getResourceInstance($resource);
+            if ($instance) {
+                $instance->beforeQuery($query);
+            }
+
+            $result = $query->get();
+
+            $data = $result->data;
+            if ($instance) {
+                $data = $instance->afterQuery($data);
+            }
 
             return $this->respond([
                 'status' => 'success',
-                'data' => $result->data,
+                'data' => $data,
                 'pagination' => $result->pagination
             ]);
         } catch (ApiException $e) {
@@ -46,12 +57,21 @@ class ApiController extends Controller
         try {
             RequestProcessor::process($resource, 'get', $this->request);
 
-            $result = query($resource)
-                ->mode(QueryMode::OPEN)
-                ->find($id);
+            $query = query($resource)->mode(QueryMode::OPEN);
+            
+            $instance = self::getResourceInstance($resource);
+            if ($instance) {
+                $instance->beforeQuery($query);
+            }
+
+            $result = $query->find($id);
 
             if ($result === null) {
                 return $this->failNotFound("Resource {$resource} with ID {$id} not found.");
+            }
+
+            if ($instance) {
+                $result = $instance->afterQuery([$result])[0] ?? null;
             }
 
             return $this->respond([
@@ -88,6 +108,11 @@ class ApiController extends Controller
                 $payload = $this->request->getJSON(true) ?? $this->request->getPost();
             }
 
+            $instance = self::getResourceInstance($resource);
+            if ($instance) {
+                $payload = $instance->beforeSave($payload);
+            }
+
             $metadata = SchemaReflector::reflect($resource);
             $modelClass = $metadata->modelClass;
 
@@ -103,6 +128,9 @@ class ApiController extends Controller
             }
 
             $record = query($resource)->find($id);
+            if ($instance && $record) {
+                $record = $instance->afterSave(is_object($record) ? (array) $record : $record);
+            }
 
             return $this->respondCreated([
                 'status' => 'success',
@@ -138,6 +166,11 @@ class ApiController extends Controller
                 $payload = $this->request->getJSON(true) ?? $this->request->getRawInput();
             }
 
+            $instance = self::getResourceInstance($resource);
+            if ($instance) {
+                $payload = $instance->beforeSave($payload);
+            }
+
             $metadata = SchemaReflector::reflect($resource);
             $modelClass = $metadata->modelClass;
 
@@ -153,6 +186,9 @@ class ApiController extends Controller
             }
 
             $record = query($resource)->find($id);
+            if ($instance && $record) {
+                $record = $instance->afterSave(is_object($record) ? (array) $record : $record);
+            }
 
             return $this->respond([
                 'status' => 'success',
@@ -199,5 +235,22 @@ class ApiController extends Controller
         } catch (\Throwable $e) {
             return $this->fail($e->getMessage());
         }
+    }
+
+    /**
+     * Resolve resource configuration instance by name.
+     */
+    private static function getResourceInstance(string $resource): ?ResourceConfigInterface
+    {
+        $config = config('JengoApi');
+        foreach ($config->resources as $resClass) {
+            if (class_exists($resClass)) {
+                $resObj = new $resClass();
+                if ($resObj instanceof ResourceConfigInterface && $resObj->name() === $resource) {
+                    return $resObj;
+                }
+            }
+        }
+        return null;
     }
 }

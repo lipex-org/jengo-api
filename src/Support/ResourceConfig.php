@@ -40,4 +40,24 @@ abstract class ResourceConfig implements ResourceConfigInterface
     {
         return $this->maxLimit;
     }
+
+    public function beforeSave(array $data): array
+    {
+        return $data;
+    }
+
+    public function afterSave(array $record): array
+    {
+        return $record;
+    }
+
+    public function beforeQuery($query): void
+    {
+        // No-op
+    }
+
+    public function afterQuery(array $data): array
+    {
+        return $data;
+    }
 }

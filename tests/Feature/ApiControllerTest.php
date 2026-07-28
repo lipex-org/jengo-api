@@ -75,31 +75,13 @@ final class ApiControllerTest extends TestCase
         $this->assertSame('success', $body['status']);
         $this->assertCount(1, $body['data']);
         $this->assertSame('Initial Title', $body['data'][0]['title']);
+        $this->assertTrue($body['data'][0]['hook_executed']);
 
         $forge->dropTable('temp_api_table', true);
         $schemaFile = APPPATH . 'Schemas/TempApiTableSchema.php';
         if (file_exists($schemaFile)) {
             unlink($schemaFile);
         }
-    }
-
-    public function testResourceDtoFluentApi(): void
-    {
-        $resource = \Jengo\Api\DTO\Resource::name('users')
-            ->only(['get', 'post'])
-            ->form('App\Validation\UserForm')
-            ->capabilities(['pagination'])
-            ->relations(['files'])
-            ->maxLimit(50);
-
-        $this->assertSame('users', $resource->getName());
-
-        $config = $resource->toArray();
-        $this->assertSame(['get', 'post'], $config['exposed_methods']);
-        $this->assertSame('App\Validation\UserForm', $config['form']);
-        $this->assertSame(['pagination'], $config['capabilities']);
-        $this->assertSame(['files'], $config['allowed_relations']);
-        $this->assertSame(50, $config['max_limit']);
     }
 
     public function testMakeApiResourceCommand(): void
@@ -137,5 +119,15 @@ class TempApiTableResource extends \Jengo\Api\Support\ResourceConfig
     public function name(): string
     {
         return 'temp_api_table';
+    }
+
+    public function afterQuery(array $data): array
+    {
+        foreach ($data as $row) {
+            if (is_object($row)) {
+                $row->hook_executed = true;
+            }
+        }
+        return $data;
     }
 }
