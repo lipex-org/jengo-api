@@ -49,6 +49,7 @@ class RequestProcessor
                             'allowed_relations' => $resObj->allowedRelations(),
                             'max_limit' => $resObj->maxLimit(),
                             'obfuscated_fields' => $resObj->obfuscatedFields(),
+                            'required_auth' => $resObj->requiredAuth(),
                         ];
                         self::$resolvedConfigs[$cacheKey] = $resourceConfig;
                         break;
@@ -71,7 +72,25 @@ class RequestProcessor
             throw new ApiException("Method '{$method}' is not allowed for resource '{$resource}'.", 405);
         }
 
-        // 3. Capability security checks for GET requests
+        // 3. Authentication & Permission checks (CodeIgniter Shield support)
+        $requiredAuth = $resourceConfig['required_auth'] ?? [];
+        $authRule = $requiredAuth[$method] ?? $requiredAuth['*'] ?? null;
+        if ($authRule) {
+            if (!function_exists('auth')) {
+                throw new ApiException("Authentication mechanism is not configured on this server.", 500);
+            }
+
+            $user = auth()->user();
+            if ($user === null) {
+                throw new ApiException("Authentication required to access this resource.", 401);
+            }
+
+            if (is_string($authRule) && !$user->hasPermission($authRule)) {
+                throw new ApiException("Insufficient permissions. Required permission: '{$authRule}'.", 403);
+            }
+        }
+
+        // 4. Capability security checks for GET requests
         if ($method === 'get') {
             $allowedCapabilities = $resourceConfig['capabilities'] ?? ['pagination', 'search', 'sort'];
             $allowedRelations = $resourceConfig['allowed_relations'] ?? [];
@@ -116,7 +135,7 @@ class RequestProcessor
             }
         }
 
-        // 4. Deobfuscation of query string parameters
+        // 5. Deobfuscation of query string parameters
         $obfuscatedFields = $resourceConfig['obfuscated_fields'] ?? [];
         if (!empty($obfuscatedFields)) {
             helper('jengo');
@@ -145,5 +164,13 @@ class RequestProcessor
             }
         }
         return null;
+    }
+
+    /**
+     * Clear cached resolved configurations (primarily for unit tests).
+     */
+    public static function clearCache(): void
+    {
+        self::$resolvedConfigs = [];
     }
 }
