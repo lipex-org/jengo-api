@@ -89,6 +89,14 @@ final class ApiControllerTest extends TestCase
         $this->assertSame('success', $showBody['status']);
         $this->assertSame('Initial Title', $showBody['data']['title']);
 
+        // Assert RFC 7807 problem response on 404
+        $notFoundResponse = $controller->show('temp_api_table', '999');
+        $notFoundBody = json_decode($notFoundResponse->getBody(), true);
+        $this->assertSame('Resource Not Found', $notFoundBody['title']);
+        $this->assertSame(404, $notFoundBody['status']);
+        $this->assertStringContainsString('not found', $notFoundBody['detail']);
+        $this->assertSame('about:blank', $notFoundBody['type']);
+
         $forge->dropTable('temp_api_table', true);
         $schemaFile = APPPATH . 'Schemas/TempApiTableSchema.php';
         if (file_exists($schemaFile)) {
@@ -218,6 +226,21 @@ final class ApiControllerTest extends TestCase
         // Clean up
         $forge->dropTable('temp_users', true);
         $forge->dropTable('temp_posts', true);
+    }
+
+    public function testVersionedApiRoutes(): void
+    {
+        $routes = Services::routes(false);
+        Services::injectMock('routes', $routes);
+
+        \Jengo\Api\Router::publish($routes, [
+            'version' => 'v1'
+        ]);
+
+        $routesList = $routes->getRoutes('GET');
+        $this->assertArrayHasKey('v1/docs', $routesList);
+        $this->assertArrayHasKey('v1/docs/ui', $routesList);
+        $this->assertArrayHasKey('v1/([^/]+)', $routesList);
     }
 
     private function cleanFileSystem(): void

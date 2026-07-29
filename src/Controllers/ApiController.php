@@ -24,7 +24,7 @@ class ApiController extends Controller
             $spec = \Jengo\Api\Services\SwaggerGenerator::generate();
             return $this->respond($spec);
         } catch (\Throwable $e) {
-            return $this->fail($e->getMessage());
+            return $this->respondProblem('Internal Server Error', 500, $e->getMessage());
         }
     }
 
@@ -76,7 +76,7 @@ HTML;
 
             $query = query($resource)->mode(QueryMode::OPEN);
             
-            $instance = self::getResourceInstance($resource);
+            $instance = $this->getResourceInstance($resource);
             if ($instance) {
                 $instance->beforeQuery($query);
             }
@@ -94,12 +94,13 @@ HTML;
                 'pagination' => $result->pagination
             ]);
         } catch (ApiException $e) {
-            return $this->respond([
-                'status' => 'error',
-                'message' => $e->getMessage()
-            ], $e->getCode());
+            $data = json_decode($e->getMessage(), true);
+            if (is_array($data)) {
+                return $this->respondProblem($data['title'] ?? 'API Error', $e->getCode(), $data['detail'] ?? '', $data['invalid_params'] ?? []);
+            }
+            return $this->respondProblem('API Error', $e->getCode(), $e->getMessage());
         } catch (\Throwable $e) {
-            return $this->fail($e->getMessage());
+            return $this->respondProblem('Internal Server Error', 500, $e->getMessage());
         }
     }
 
@@ -108,7 +109,7 @@ HTML;
         try {
             RequestProcessor::process($resource, 'get', $this->request);
 
-            $instance = self::getResourceInstance($resource);
+            $instance = $this->getResourceInstance($resource);
             if ($instance && in_array('id', $instance->obfuscatedFields(), true)) {
                 helper('jengo');
                 $id = (string) sqids_unhash($id);
@@ -122,7 +123,7 @@ HTML;
             $result = $query->find($id);
 
             if ($result === null) {
-                return $this->failNotFound("Resource {$resource} with ID {$id} not found.");
+                return $this->respondProblem('Resource Not Found', 404, "Resource {$resource} with ID {$id} not found.");
             }
 
             if ($instance) {
@@ -134,12 +135,13 @@ HTML;
                 'data' => $result
             ]);
         } catch (ApiException $e) {
-            return $this->respond([
-                'status' => 'error',
-                'message' => $e->getMessage()
-            ], $e->getCode());
+            $data = json_decode($e->getMessage(), true);
+            if (is_array($data)) {
+                return $this->respondProblem($data['title'] ?? 'API Error', $e->getCode(), $data['detail'] ?? '', $data['invalid_params'] ?? []);
+            }
+            return $this->respondProblem('API Error', $e->getCode(), $e->getMessage());
         } catch (\Throwable $e) {
-            return $this->fail($e->getMessage());
+            return $this->respondProblem('Internal Server Error', 500, $e->getMessage());
         }
     }
 
@@ -152,18 +154,21 @@ HTML;
             if ($formClass && class_exists($formClass)) {
                 $form = new $formClass($this->request);
                 if (!$form->validate()) {
-                    return $this->respond([
-                        'status' => 'error',
-                        'message' => 'The given data was invalid.',
-                        'errors' => $form->getErrors()
-                    ], 422);
+                    $invalidParams = [];
+                    foreach ($form->getErrors() as $field => $error) {
+                        $invalidParams[] = [
+                            'name' => $field,
+                            'reason' => $error
+                        ];
+                    }
+                    return $this->respondProblem('Validation Failed', 422, 'The request payload failed validation checks.', $invalidParams);
                 }
                 $payload = $form->validated()->toArray();
             } else {
                 $payload = $this->request->getJSON(true) ?? $this->request->getPost();
             }
 
-            $instance = self::getResourceInstance($resource);
+            $instance = $this->getResourceInstance($resource);
             if ($instance) {
                 $payload = $instance->beforeSave($payload);
             }
@@ -180,16 +185,24 @@ HTML;
                 'data' => $record
             ]);
         } catch (ApiException $e) {
-            return $this->respond([
-                'status' => 'error',
-                'message' => $e->getMessage()
-            ], $e->getCode());
+            $data = json_decode($e->getMessage(), true);
+            if (is_array($data)) {
+                return $this->respondProblem($data['title'] ?? 'API Error', $e->getCode(), $data['detail'] ?? '', $data['invalid_params'] ?? []);
+            }
+            return $this->respondProblem('API Error', $e->getCode(), $e->getMessage());
         } catch (\Throwable $e) {
             $errors = json_decode($e->getMessage(), true);
             if (is_array($errors)) {
-                return $this->failValidationErrors($errors);
+                $invalidParams = [];
+                foreach ($errors as $field => $error) {
+                    $invalidParams[] = [
+                        'name' => $field,
+                        'reason' => $error
+                    ];
+                }
+                return $this->respondProblem('Validation Failed', 422, 'Model transaction failed validation checks.', $invalidParams);
             }
-            return $this->fail($e->getMessage());
+            return $this->respondProblem('Internal Server Error', 500, $e->getMessage());
         }
     }
 
@@ -199,7 +212,7 @@ HTML;
             $resourceConfig = RequestProcessor::process($resource, 'put', $this->request);
             $formClass = $resourceConfig['form'] ?? null;
 
-            $instance = self::getResourceInstance($resource);
+            $instance = $this->getResourceInstance($resource);
             if ($instance && in_array('id', $instance->obfuscatedFields(), true)) {
                 helper('jengo');
                 $id = (string) sqids_unhash($id);
@@ -208,11 +221,14 @@ HTML;
             if ($formClass && class_exists($formClass)) {
                 $form = new $formClass($this->request);
                 if (!$form->validate()) {
-                    return $this->respond([
-                        'status' => 'error',
-                        'message' => 'The given data was invalid.',
-                        'errors' => $form->getErrors()
-                    ], 422);
+                    $invalidParams = [];
+                    foreach ($form->getErrors() as $field => $error) {
+                        $invalidParams[] = [
+                            'name' => $field,
+                            'reason' => $error
+                        ];
+                    }
+                    return $this->respondProblem('Validation Failed', 422, 'The request payload failed validation checks.', $invalidParams);
                 }
                 $payload = $form->validated()->toArray();
             } else {
@@ -235,16 +251,24 @@ HTML;
                 'data' => $record
             ]);
         } catch (ApiException $e) {
-            return $this->respond([
-                'status' => 'error',
-                'message' => $e->getMessage()
-            ], $e->getCode());
+            $data = json_decode($e->getMessage(), true);
+            if (is_array($data)) {
+                return $this->respondProblem($data['title'] ?? 'API Error', $e->getCode(), $data['detail'] ?? '', $data['invalid_params'] ?? []);
+            }
+            return $this->respondProblem('API Error', $e->getCode(), $e->getMessage());
         } catch (\Throwable $e) {
             $errors = json_decode($e->getMessage(), true);
             if (is_array($errors)) {
-                return $this->failValidationErrors($errors);
+                $invalidParams = [];
+                foreach ($errors as $field => $error) {
+                    $invalidParams[] = [
+                        'name' => $field,
+                        'reason' => $error
+                    ];
+                }
+                return $this->respondProblem('Validation Failed', 422, 'Model transaction failed validation checks.', $invalidParams);
             }
-            return $this->fail($e->getMessage());
+            return $this->respondProblem('Internal Server Error', 500, $e->getMessage());
         }
     }
 
@@ -253,7 +277,7 @@ HTML;
         try {
             RequestProcessor::process($resource, 'delete', $this->request);
 
-            $instance = self::getResourceInstance($resource);
+            $instance = $this->getResourceInstance($resource);
             if ($instance && in_array('id', $instance->obfuscatedFields(), true)) {
                 helper('jengo');
                 $id = (string) sqids_unhash($id);
@@ -263,14 +287,14 @@ HTML;
             $modelClass = $metadata->modelClass;
 
             if (!$modelClass) {
-                return $this->fail("No model class associated with schema {$resource} to perform delete.");
+                return $this->respondProblem('Internal Server Error', 500, "No model class associated with schema {$resource} to perform delete.");
             }
 
             $model = new $modelClass();
             $success = $model->delete($id);
 
             if ($success === false) {
-                return $this->fail("Failed to delete record.");
+                return $this->respondProblem('Internal Server Error', 500, "Failed to delete record.");
             }
 
             return $this->respondDeleted([
@@ -278,25 +302,34 @@ HTML;
                 'message' => "Resource {$resource} with ID {$id} successfully deleted."
             ]);
         } catch (ApiException $e) {
-            return $this->respond([
-                'status' => 'error',
-                'message' => $e->getMessage()
-            ], $e->getCode());
+            $data = json_decode($e->getMessage(), true);
+            if (is_array($data)) {
+                return $this->respondProblem($data['title'] ?? 'API Error', $e->getCode(), $data['detail'] ?? '', $data['invalid_params'] ?? []);
+            }
+            return $this->respondProblem('API Error', $e->getCode(), $e->getMessage());
         } catch (\Throwable $e) {
-            return $this->fail($e->getMessage());
+            return $this->respondProblem('Internal Server Error', 500, $e->getMessage());
         }
     }
 
     /**
-     * Resolve resource configuration instance by name.
+     * Resolve resource configuration instance by name and request version.
      */
-    private static function getResourceInstance(string $resource): ?ResourceConfigInterface
+    private function getResourceInstance(string $resource): ?ResourceConfigInterface
     {
+        $version = RequestProcessor::extractVersion($this->request->getPath());
         $config = config('JengoApi');
         foreach ($config->resources as $resClass) {
             if (class_exists($resClass)) {
                 $resObj = new $resClass();
                 if ($resObj instanceof ResourceConfigInterface && $resObj->name() === $resource) {
+                    $resVersion = $resObj->version();
+                    if ($version !== null && $resVersion !== $version) {
+                        continue;
+                    }
+                    if ($version === null && $resVersion !== null) {
+                        continue;
+                    }
                     return $resObj;
                 }
             }
@@ -382,5 +415,25 @@ HTML;
             $db->transRollback();
             throw $e;
         }
+    }
+
+    /**
+     * Respond with an RFC 7807 compliant Problem Details JSON payload.
+     */
+    private function respondProblem(string $title, int $status, string $detail, array $invalidParams = [])
+    {
+        $response = [
+            'type' => 'about:blank',
+            'title' => $title,
+            'status' => $status,
+            'detail' => $detail,
+            'instance' => '/' . ltrim($this->request->getPath(), '/'),
+        ];
+
+        if (!empty($invalidParams)) {
+            $response['invalid_params'] = $invalidParams;
+        }
+
+        return $this->respond($response, $status, 'application/problem+json');
     }
 }

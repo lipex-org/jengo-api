@@ -12,6 +12,17 @@ interface ResourceConfigInterface
     public function name(): string;
 
     /**
+     * Get the version prefix of the resource (e.g. 'v1'), if any.
+     */
+    public function version(): ?string;
+
+    /**
+     * Get the authentication requirements for actions.
+     * E.g. ['get' => true, 'post' => 'users.create']
+     */
+    public function requiredAuth(): array;
+
+    /**
      * Get the allowed HTTP methods (e.g. ['get', 'post']).
      */
     public function exposedMethods(): array;

@@ -14,8 +14,14 @@ abstract class ResourceConfig implements ResourceConfigInterface
     protected array $allowedRelations = [];
     protected int $maxLimit = 100;
     protected array $obfuscatedFields = [];
+    protected ?string $version = null;
 
     abstract public function name(): string;
+
+    public function version(): ?string
+    {
+        return $this->version;
+    }
 
     public function exposedMethods(): array
     {

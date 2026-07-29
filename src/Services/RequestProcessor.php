@@ -21,16 +21,27 @@ class RequestProcessor
      */
     public static function process(string $resource, string $method, RequestInterface $request): array
     {
+        $version = self::extractVersion($request->getPath());
         $config = config('JengoApi');
         $resourceConfig = null;
 
-        if (isset(self::$resolvedConfigs[$resource])) {
-            $resourceConfig = self::$resolvedConfigs[$resource];
+        $cacheKey = ($version ? $version . '_' : '') . $resource;
+        if (isset(self::$resolvedConfigs[$cacheKey])) {
+            $resourceConfig = self::$resolvedConfigs[$cacheKey];
         } else {
             foreach ($config->resources as $resClass) {
                 if (class_exists($resClass)) {
                     $resObj = new $resClass();
                     if ($resObj instanceof ResourceConfigInterface && $resObj->name() === $resource) {
+                        // Match version
+                        $resVersion = $resObj->version();
+                        if ($version !== null && $resVersion !== $version) {
+                            continue;
+                        }
+                        if ($version === null && $resVersion !== null) {
+                            continue;
+                        }
+
                         $resourceConfig = [
                             'form' => $resObj->formClass(),
                             'exposed_methods' => $resObj->exposedMethods(),
@@ -39,7 +50,7 @@ class RequestProcessor
                             'max_limit' => $resObj->maxLimit(),
                             'obfuscated_fields' => $resObj->obfuscatedFields(),
                         ];
-                        self::$resolvedConfigs[$resource] = $resourceConfig;
+                        self::$resolvedConfigs[$cacheKey] = $resourceConfig;
                         break;
                     }
                 }
@@ -120,5 +131,19 @@ class RequestProcessor
         }
 
         return $resourceConfig;
+    }
+
+    /**
+     * Extract version segment (e.g. v1, v2) from request path.
+     */
+    public static function extractVersion(string $path): ?string
+    {
+        $segments = explode('/', trim($path, '/'));
+        foreach ($segments as $segment) {
+            if (preg_match('/^v[0-9]+$/i', $segment)) {
+                return strtolower($segment);
+            }
+        }
+        return null;
     }
 }
