@@ -6,9 +6,11 @@ namespace Jengo\Api\Controllers;
 
 use CodeIgniter\API\ResponseTrait;
 use CodeIgniter\Controller;
+use CodeIgniter\Exceptions\PageNotFoundException;
 use Jengo\Api\Contracts\ResourceConfigInterface;
 use Jengo\Api\Exceptions\ApiException;
 use Jengo\Api\Services\RequestProcessor;
+use Jengo\Api\Services\SwaggerGenerator;
 use Jengo\Schema\Query\Enums\QueryMode;
 use Jengo\Schema\Reflection\SchemaReflector;
 use function Jengo\Schema\query;
@@ -18,13 +20,70 @@ class ApiController extends Controller
     use ResponseTrait;
     protected $format = 'json';
 
+    public function docs()
+    {
+        try {
+            $spec = SwaggerGenerator::generate();
+            return $this->respond($spec);
+        } catch (\Throwable $e) {
+            return $this->fail($e->getMessage());
+        }
+    }
+
+    public function docsUi()
+    {
+        helper('url');
+
+        $jsonUrl = null;
+
+        try {
+            $jsonUrl = url_to('api-docs');
+        } catch (\Throwable $e) {
+            throw new PageNotFoundException();
+        }
+
+        $html = <<<HTML
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="Swagger UI for Jengo API" />
+    <title>Jengo API Documentation</title>
+    <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5.11.0/swagger-ui.css" />
+</head>
+<body>
+    <div id="swagger-ui"></div>
+    <script src="https://unpkg.com/swagger-ui-dist@5.11.0/swagger-ui-bundle.js"></script>
+    <script src="https://unpkg.com/swagger-ui-dist@5.11.0/swagger-ui-standalone-preset.js"></script>
+    <script>
+        window.onload = () => {
+            window.ui = SwaggerUIBundle({
+                url: '{$jsonUrl}',
+                dom_id: '#swagger-ui',
+                deepLinking: true,
+                presets: [
+                    SwaggerUIBundle.presets.apis,
+                    SwaggerUIStandalonePreset
+                ],
+                layout: "StandaloneLayout"
+            });
+        };
+    </script>
+</body>
+</html>
+HTML;
+
+        return $this->response->setBody($html);
+    }
+
     public function index(string $resource)
     {
         try {
             RequestProcessor::process($resource, 'get', $this->request);
 
             $query = query($resource)->mode(QueryMode::OPEN);
-            
+
             $instance = self::getResourceInstance($resource);
             if ($instance) {
                 $instance->beforeQuery($query);
@@ -57,9 +116,13 @@ class ApiController extends Controller
         try {
             RequestProcessor::process($resource, 'get', $this->request);
 
-            $query = query($resource)->mode(QueryMode::OPEN);
-            
             $instance = self::getResourceInstance($resource);
+            if ($instance && in_array('id', $instance->obfuscatedFields(), true)) {
+                helper('jengo');
+                $id = (string) sqids_unhash($id);
+            }
+
+            $query = query($resource)->mode(QueryMode::OPEN);
             if ($instance) {
                 $instance->beforeQuery($query);
             }
@@ -152,6 +215,12 @@ class ApiController extends Controller
             $resourceConfig = RequestProcessor::process($resource, 'put', $this->request);
             $formClass = $resourceConfig['form'] ?? null;
 
+            $instance = self::getResourceInstance($resource);
+            if ($instance && in_array('id', $instance->obfuscatedFields(), true)) {
+                helper('jengo');
+                $id = (string) sqids_unhash($id);
+            }
+
             if ($formClass && class_exists($formClass)) {
                 $form = new $formClass($this->request);
                 if (!$form->validate()) {
@@ -166,7 +235,6 @@ class ApiController extends Controller
                 $payload = $this->request->getJSON(true) ?? $this->request->getRawInput();
             }
 
-            $instance = self::getResourceInstance($resource);
             if ($instance) {
                 $payload = $instance->beforeSave($payload);
             }
@@ -208,6 +276,12 @@ class ApiController extends Controller
     {
         try {
             RequestProcessor::process($resource, 'delete', $this->request);
+
+            $instance = self::getResourceInstance($resource);
+            if ($instance && in_array('id', $instance->obfuscatedFields(), true)) {
+                helper('jengo');
+                $id = (string) sqids_unhash($id);
+            }
 
             $metadata = SchemaReflector::reflect($resource);
             $modelClass = $metadata->modelClass;

@@ -46,7 +46,9 @@ class SetupVariant implements CommandVariantInterface
         } else {
             $content = file_get_contents($sourceConfig);
             if ($content !== false) {
-                $content = str_replace('namespace Jengo\Api\Config;', 'namespace Config;', $content);
+                $content = str_replace('namespace Jengo\Api\Config;', "namespace Config;\n\nuse Jengo\Api\Config\JengoApi as BaseJengoApi;", $content);
+                $content = str_replace('class JengoApi extends BaseConfig', 'class JengoApi extends BaseJengoApi', $content);
+                $content = str_replace('use CodeIgniter\Config\BaseConfig;', '', $content);
                 if (file_put_contents($targetConfig, $content) !== false) {
                     CLI::write("Published config file to [{$targetConfig}]", 'green');
                 } else {

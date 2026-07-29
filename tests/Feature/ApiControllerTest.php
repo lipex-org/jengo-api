@@ -36,7 +36,8 @@ final class ApiControllerTest extends TestCase
         $this->assertFileExists($publishedConfig);
 
         $content = file_get_contents($publishedConfig);
-        $this->assertStringContainsString('class JengoApi extends BaseConfig', $content);
+        $this->assertStringContainsString('class JengoApi extends BaseJengoApi', $content);
+        $this->assertStringContainsString('use Jengo\Api\Config\JengoApi as BaseJengoApi;', $content);
     }
 
     public function testDynamicApiRoutesAndValidation(): void
@@ -77,6 +78,17 @@ final class ApiControllerTest extends TestCase
         $this->assertSame('Initial Title', $body['data'][0]['title']);
         $this->assertTrue($body['data'][0]['hook_executed']);
 
+        // Test Sqids obfuscation / deobfuscation
+        helper('jengo');
+        $obfuscatedId = sqids_hash(1);
+        $this->assertNotEmpty($obfuscatedId);
+
+        $showResponse = $controller->show('temp_api_table', $obfuscatedId);
+        $showBody = json_decode($showResponse->getBody(), true);
+
+        $this->assertSame('success', $showBody['status']);
+        $this->assertSame('Initial Title', $showBody['data']['title']);
+
         $forge->dropTable('temp_api_table', true);
         $schemaFile = APPPATH . 'Schemas/TempApiTableSchema.php';
         if (file_exists($schemaFile)) {
@@ -105,6 +117,54 @@ final class ApiControllerTest extends TestCase
         }
     }
 
+    public function testSwaggerDocsGeneration(): void
+    {
+        $config = config('JengoApi');
+        $config->apiName = 'My Custom API Title';
+        $config->apiBaseUrl = 'https://myapi.com/v1';
+        $config->resources = [
+            TempApiTableResource::class
+        ];
+
+        $controller = new \Jengo\Api\Controllers\ApiController();
+        $controller->initController(Services::request(), Services::response(), Services::logger());
+
+        $response = $controller->docs();
+        $body = json_decode($response->getBody(), true);
+
+        $this->assertSame('3.0.0', $body['openapi']);
+        $this->assertSame('My Custom API Title', $body['info']['title']);
+        $this->assertSame('https://myapi.com/v1', $body['servers'][0]['url']);
+        $this->assertArrayHasKey('/temp_api_table', $body['paths']);
+        $this->assertArrayHasKey('/temp_api_table/{id}', $body['paths']);
+    }
+
+    public function testSwaggerUiGeneration(): void
+    {
+        $controller = new \Jengo\Api\Controllers\ApiController();
+        $controller->initController(Services::request(), Services::response(), Services::logger());
+
+        $response = $controller->docsUi();
+        $body = $response->getBody();
+
+        $this->assertStringContainsString('Swagger UI for Jengo API', $body);
+        $this->assertStringContainsString('swagger-ui-bundle.js', $body);
+    }
+
+    public function testConfigurableDocsRouteOption(): void
+    {
+        $routes = Services::routes(false);
+        Services::injectMock('routes', $routes);
+
+        \Jengo\Api\Router::publish($routes, [
+            'docs' => 'my-swagger-custom',
+            'docs_ui' => 'my-swagger-ui'
+        ]);
+        $routesList = $routes->getRoutes('GET');
+        $this->assertArrayHasKey('my-swagger-custom', $routesList);
+        $this->assertArrayHasKey('my-swagger-ui', $routesList);
+    }
+
     private function cleanFileSystem(): void
     {
         $publishedConfig = APPPATH . 'Config/JengoApi.php';
@@ -116,6 +176,8 @@ final class ApiControllerTest extends TestCase
 
 class TempApiTableResource extends \Jengo\Api\Support\ResourceConfig
 {
+    protected array $obfuscatedFields = ['id'];
+
     public function name(): string
     {
         return 'temp_api_table';

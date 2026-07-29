@@ -13,6 +13,7 @@ abstract class ResourceConfig implements ResourceConfigInterface
     protected array $capabilities = ['pagination', 'search', 'sort'];
     protected array $allowedRelations = [];
     protected int $maxLimit = 100;
+    protected array $obfuscatedFields = [];
 
     abstract public function name(): string;
 
@@ -39,6 +40,11 @@ abstract class ResourceConfig implements ResourceConfigInterface
     public function maxLimit(): int
     {
         return $this->maxLimit;
+    }
+
+    public function obfuscatedFields(): array
+    {
+        return $this->obfuscatedFields;
     }
 
     public function beforeSave(array $data): array

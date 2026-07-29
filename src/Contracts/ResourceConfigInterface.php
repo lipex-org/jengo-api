@@ -37,6 +37,11 @@ interface ResourceConfigInterface
     public function maxLimit(): int;
 
     /**
+     * Get the fields that should be obfuscated/deobfuscated using Sqids.
+     */
+    public function obfuscatedFields(): array;
+
+    /**
      * Hook run before a record is created or updated.
      */
     public function beforeSave(array $data): array;

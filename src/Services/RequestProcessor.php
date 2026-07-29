@@ -37,6 +37,7 @@ class RequestProcessor
                             'capabilities' => $resObj->capabilities(),
                             'allowed_relations' => $resObj->allowedRelations(),
                             'max_limit' => $resObj->maxLimit(),
+                            'obfuscated_fields' => $resObj->obfuscatedFields(),
                         ];
                         self::$resolvedConfigs[$resource] = $resourceConfig;
                         break;
@@ -100,6 +101,20 @@ class RequestProcessor
                     unset($_GET['derive']);
                 } else {
                     $_GET['derive'] = implode(',', $validDerivations);
+                }
+            }
+        }
+
+        // 4. Deobfuscation of query string parameters
+        $obfuscatedFields = $resourceConfig['obfuscated_fields'] ?? [];
+        if (!empty($obfuscatedFields)) {
+            helper('jengo');
+            foreach ($obfuscatedFields as $field) {
+                if (isset($_GET[$field]) && is_string($_GET[$field]) && $_GET[$field] !== '') {
+                    $unhashed = sqids_unhash($_GET[$field]);
+                    if ($unhashed !== null) {
+                        $_GET[$field] = $unhashed;
+                    }
                 }
             }
         }
