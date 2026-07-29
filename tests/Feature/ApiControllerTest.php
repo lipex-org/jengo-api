@@ -165,12 +165,88 @@ final class ApiControllerTest extends TestCase
         $this->assertArrayHasKey('my-swagger-ui', $routesList);
     }
 
+    public function testNestedRelationshipMutations(): void
+    {
+        $forge = \Config\Database::forge('tests');
+        $forge->addField([
+            'id' => ['type' => 'INTEGER', 'auto_increment' => true],
+            'name' => ['type' => 'VARCHAR', 'constraint' => 255],
+        ]);
+        $forge->addPrimaryKey('id');
+        $forge->createTable('temp_users', true);
+
+        $forge->addField([
+            'id' => ['type' => 'INTEGER', 'auto_increment' => true],
+            'title' => ['type' => 'VARCHAR', 'constraint' => 255],
+            'temp_user_id' => ['type' => 'INTEGER', 'null' => true],
+        ]);
+        $forge->addPrimaryKey('id');
+        $forge->createTable('temp_posts', true);
+
+        $config = config('JengoApi');
+        $config->resources = [
+            TempUsersResource::class,
+            TempPostsResource::class
+        ];
+
+        $request = Services::request(null, false);
+        $request->setBody(json_encode([
+            'name' => 'Alice',
+            'temp_posts' => [
+                ['title' => 'Alice Post 1'],
+                ['title' => 'Alice Post 2']
+            ]
+        ]));
+        $request->setHeader('Content-Type', 'application/json');
+
+        $controller = new \Jengo\Api\Controllers\ApiController();
+        $controller->initController($request, Services::response(), Services::logger());
+
+        $response = $controller->create('temp_users');
+        $body = json_decode($response->getBody(), true);
+
+        $this->assertSame('success', $body['status']);
+        $db = \Config\Database::connect('tests');
+        $this->assertSame(1, $db->table('temp_users')->countAllResults());
+        $this->assertSame(2, $db->table('temp_posts')->countAllResults());
+
+        // Check foreign key reference
+        $posts = $db->table('temp_posts')->get()->getResultArray();
+        $this->assertEquals(1, $posts[0]['temp_user_id']);
+        $this->assertEquals(1, $posts[1]['temp_user_id']);
+
+        // Clean up
+        $forge->dropTable('temp_users', true);
+        $forge->dropTable('temp_posts', true);
+    }
+
     private function cleanFileSystem(): void
     {
         $publishedConfig = APPPATH . 'Config/JengoApi.php';
         if (file_exists($publishedConfig)) {
             unlink($publishedConfig);
         }
+    }
+}
+
+class TempUsersResource extends \Jengo\Api\Support\ResourceConfig
+{
+    public function name(): string
+    {
+        return 'temp_users';
+    }
+
+    public function allowedRelations(): array
+    {
+        return ['temp_posts'];
+    }
+}
+
+class TempPostsResource extends \Jengo\Api\Support\ResourceConfig
+{
+    public function name(): string
+    {
+        return 'temp_posts';
     }
 }
 

@@ -6,11 +6,9 @@ namespace Jengo\Api\Controllers;
 
 use CodeIgniter\API\ResponseTrait;
 use CodeIgniter\Controller;
-use CodeIgniter\Exceptions\PageNotFoundException;
 use Jengo\Api\Contracts\ResourceConfigInterface;
 use Jengo\Api\Exceptions\ApiException;
 use Jengo\Api\Services\RequestProcessor;
-use Jengo\Api\Services\SwaggerGenerator;
 use Jengo\Schema\Query\Enums\QueryMode;
 use Jengo\Schema\Reflection\SchemaReflector;
 use function Jengo\Schema\query;
@@ -23,7 +21,7 @@ class ApiController extends Controller
     public function docs()
     {
         try {
-            $spec = SwaggerGenerator::generate();
+            $spec = \Jengo\Api\Services\SwaggerGenerator::generate();
             return $this->respond($spec);
         } catch (\Throwable $e) {
             return $this->fail($e->getMessage());
@@ -33,14 +31,8 @@ class ApiController extends Controller
     public function docsUi()
     {
         helper('url');
-
-        $jsonUrl = null;
-
-        try {
-            $jsonUrl = url_to('api-docs');
-        } catch (\Throwable $e) {
-            throw new PageNotFoundException();
-        }
+        
+        $jsonUrl = site_url(str_replace('docs/ui', 'docs', $this->request->getPath()));
 
         $html = <<<HTML
 <!DOCTYPE html>
@@ -83,7 +75,7 @@ HTML;
             RequestProcessor::process($resource, 'get', $this->request);
 
             $query = query($resource)->mode(QueryMode::OPEN);
-
+            
             $instance = self::getResourceInstance($resource);
             if ($instance) {
                 $instance->beforeQuery($query);
@@ -176,19 +168,7 @@ HTML;
                 $payload = $instance->beforeSave($payload);
             }
 
-            $metadata = SchemaReflector::reflect($resource);
-            $modelClass = $metadata->modelClass;
-
-            if (!$modelClass) {
-                return $this->fail("No model class associated with schema {$resource} to perform insert.");
-            }
-
-            $model = new $modelClass();
-            $id = $model->insert($payload);
-
-            if ($id === false) {
-                return $this->failValidationErrors($model->errors());
-            }
+            $id = $this->saveResource($resource, $payload);
 
             $record = query($resource)->find($id);
             if ($instance && $record) {
@@ -205,6 +185,10 @@ HTML;
                 'message' => $e->getMessage()
             ], $e->getCode());
         } catch (\Throwable $e) {
+            $errors = json_decode($e->getMessage(), true);
+            if (is_array($errors)) {
+                return $this->failValidationErrors($errors);
+            }
             return $this->fail($e->getMessage());
         }
     }
@@ -239,19 +223,7 @@ HTML;
                 $payload = $instance->beforeSave($payload);
             }
 
-            $metadata = SchemaReflector::reflect($resource);
-            $modelClass = $metadata->modelClass;
-
-            if (!$modelClass) {
-                return $this->fail("No model class associated with schema {$resource} to perform update.");
-            }
-
-            $model = new $modelClass();
-            $success = $model->update($id, $payload);
-
-            if ($success === false) {
-                return $this->failValidationErrors($model->errors());
-            }
+            $this->saveResource($resource, $payload, $id);
 
             $record = query($resource)->find($id);
             if ($instance && $record) {
@@ -268,6 +240,10 @@ HTML;
                 'message' => $e->getMessage()
             ], $e->getCode());
         } catch (\Throwable $e) {
+            $errors = json_decode($e->getMessage(), true);
+            if (is_array($errors)) {
+                return $this->failValidationErrors($errors);
+            }
             return $this->fail($e->getMessage());
         }
     }
@@ -326,5 +302,85 @@ HTML;
             }
         }
         return null;
+    }
+
+    /**
+     * Save resource and mutate relations recursively.
+     */
+    private function saveResource(string $resource, array $payload, $id = null)
+    {
+        $metadata = SchemaReflector::reflect($resource);
+        $modelClass = $metadata->modelClass;
+
+        if (!$modelClass) {
+            throw new \RuntimeException("No model class associated with schema {$resource}");
+        }
+
+        $model = new $modelClass();
+        $relations = $metadata->relations;
+
+        // Separate relation payloads from main attributes
+        $relationPayloads = [];
+        foreach ($relations as $relation) {
+            if (array_key_exists($relation->name, $payload)) {
+                $relationPayloads[$relation->name] = $payload[$relation->name];
+                unset($payload[$relation->name]);
+            }
+        }
+
+        $db = \Config\Database::connect();
+        $db->transBegin();
+
+        try {
+            // 1. Process belongsTo relations FIRST
+            foreach ($relations as $relation) {
+                if ($relation->type === \Jengo\Schema\Metadata\RelationMetadata::BELONGS_TO && isset($relationPayloads[$relation->name])) {
+                    $childPayload = $relationPayloads[$relation->name];
+                    if (is_array($childPayload)) {
+                        $childId = $childPayload['id'] ?? null;
+                        $childResource = $relation->name;
+                        
+                        $childId = $this->saveResource($childResource, $childPayload, $childId);
+                        $payload[$relation->fromField] = $childId;
+                    }
+                }
+            }
+
+            // 2. Save the parent record
+            if ($id !== null) {
+                $success = $model->update($id, $payload);
+                if ($success === false) {
+                    throw new \RuntimeException(json_encode($model->errors()));
+                }
+            } else {
+                $id = $model->insert($payload);
+                if ($id === false) {
+                    throw new \RuntimeException(json_encode($model->errors()));
+                }
+            }
+
+            // 3. Process hasMany relations AFTER parent is saved
+            foreach ($relations as $relation) {
+                if ($relation->type === \Jengo\Schema\Metadata\RelationMetadata::HAS_MANY && isset($relationPayloads[$relation->name])) {
+                    $childPayloads = $relationPayloads[$relation->name];
+                    $childResource = $relation->name;
+
+                    if (is_array($childPayloads)) {
+                        $items = isset($childPayloads[0]) && is_array($childPayloads[0]) ? $childPayloads : [$childPayloads];
+                        foreach ($items as $item) {
+                            $item[$relation->toField] = $id;
+                            $childId = $item['id'] ?? null;
+                            $this->saveResource($childResource, $item, $childId);
+                        }
+                    }
+                }
+            }
+
+            $db->transCommit();
+            return $id;
+        } catch (\Throwable $e) {
+            $db->transRollback();
+            throw $e;
+        }
     }
 }
