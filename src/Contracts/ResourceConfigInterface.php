@@ -12,9 +12,11 @@ interface ResourceConfigInterface
     public function name(): string;
 
     /**
-     * Get the version prefix of the resource (e.g. 'v1'), if any.
+     * Get the version prefix of the resource (e.g. 'v1' or ['v1', 'v2']), if any.
+     *
+     * @return string|array|null
      */
-    public function version(): ?string;
+    public function version();
 
     /**
      * Get the authentication requirements for actions.

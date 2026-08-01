@@ -6,29 +6,64 @@ namespace Jengo\Api;
 
 use CodeIgniter\Router\RouteCollection;
 use Jengo\Api\Controllers\ApiController;
+use Jengo\Api\Support\RouterOptions;
 
 class Router
 {
-    /**
-     * Automatically registers Jengo REST routes for a schema resource.
-     */
-    public static function publish(RouteCollection $routes, array $options = []): void
-    {
-        $except = array_map('strtolower', $options['except'] ?? []);
-        $only = array_map('strtolower', $options['only'] ?? []);
-        $version = $options['version'] ?? null;
+    protected RouteCollection $routes;
+    protected RouterOptions $options;
 
-        $registerRoutes = static function ($routes) use ($except, $only, $options) {
+    public function __construct(RouteCollection $routes, ?RouterOptions $options = null)
+    {
+        $this->routes = $routes;
+        $this->options = $options ?? new RouterOptions();
+    }
+
+    /**
+     * Automatically registers Jengo REST routes and returns a Router instance for chaining.
+     */
+    public static function publish(RouteCollection $routes, ?RouterOptions $options = null): self
+    {
+        $router = new self($routes, $options);
+        $router->publishRoutes();
+        return $router;
+    }
+
+
+    /**
+     * Mutate the router settings, publish the new routes, and return the new Router instance.
+     */
+    public function mutate(RouterOptions $overrides): self
+    {
+        $mutatedOptions = $this->options->mutate($overrides);
+        $mutatedRouter = new self($this->routes, $mutatedOptions);
+        $mutatedRouter->publishRoutes();
+        return $mutatedRouter;
+    }
+
+    /**
+     * Internal method to publish the configured routes to the route collection.
+     */
+    private function publishRoutes(): void
+    {
+        $except = array_map('strtolower', $this->options->except);
+        $only = array_map('strtolower', $this->options->only);
+        $version = $this->options->version;
+        $options = $this->options;
+
+        $registerRoutes = static function ($routes) use ($except, $only, $options, $version) {
             // Register dynamic API documentation endpoint if not disabled
-            $docsRoute = $options['docs'] ?? 'docs';
+            $docsRoute = $options->docs->route;
             if ($docsRoute !== false) {
-                $routes->get($docsRoute, [ApiController::class, 'docs']);
+                $routeName = ($version ? $version . '-' : '') . 'api-docs';
+                $routes->get($docsRoute, [ApiController::class, 'docs'], ['as' => $routeName]);
             }
 
             // Register dynamic API documentation UI endpoint if not disabled
-            $docsUiRoute = $options['docs_ui'] ?? 'docs/ui';
+            $docsUiRoute = $options->docs->uiRoute;
             if ($docsUiRoute !== false) {
-                $routes->get($docsUiRoute, [ApiController::class, 'docsUi']);
+                $routeNameUi = ($version ? $version . '-' : '') . 'api-docs-ui';
+                $routes->get($docsUiRoute, [ApiController::class, 'docsUi'], ['as' => $routeNameUi]);
             }
 
             $routes->group('(:segment)', static function ($routes) use ($except, $only) {
@@ -52,9 +87,9 @@ class Router
         };
 
         if ($version) {
-            $routes->group($version, $registerRoutes);
+            $this->routes->group($version, $registerRoutes);
         } else {
-            $registerRoutes($routes);
+            $registerRoutes($this->routes);
         }
     }
 }

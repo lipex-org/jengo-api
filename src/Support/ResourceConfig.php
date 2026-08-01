@@ -14,12 +14,18 @@ abstract class ResourceConfig implements ResourceConfigInterface
     protected array $allowedRelations = [];
     protected int $maxLimit = 100;
     protected array $obfuscatedFields = [];
-    protected ?string $version = null;
+    /**
+     * @var string|array|null
+     */
+    protected $version = null;
     protected array $requiredAuth = [];
 
     abstract public function name(): string;
 
-    public function version(): ?string
+    /**
+     * @return string|array|null
+     */
+    public function version()
     {
         return $this->version;
     }

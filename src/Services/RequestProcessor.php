@@ -34,11 +34,7 @@ class RequestProcessor
                     $resObj = new $resClass();
                     if ($resObj instanceof ResourceConfigInterface && $resObj->name() === $resource) {
                         // Match version
-                        $resVersion = $resObj->version();
-                        if ($version !== null && $resVersion !== $version) {
-                            continue;
-                        }
-                        if ($version === null && $resVersion !== null) {
+                        if (!self::matchVersion($resObj->version(), $version)) {
                             continue;
                         }
 
@@ -172,5 +168,29 @@ class RequestProcessor
     public static function clearCache(): void
     {
         self::$resolvedConfigs = [];
+    }
+
+    /**
+     * Match resource version configuration against the request version prefix.
+     *
+     * @param string|array|null $resourceVersion
+     * @param string|null $requestVersion
+     */
+    public static function matchVersion($resourceVersion, ?string $requestVersion): bool
+    {
+        if ($resourceVersion === null || $resourceVersion === [] || $resourceVersion === '') {
+            // A resource config with no version matches any versioned request
+            return true;
+        }
+
+        if ($requestVersion === null) {
+            // A version-restricted resource cannot be accessed via unversioned request
+            return false;
+        }
+
+        $resVersions = is_array($resourceVersion) ? $resourceVersion : [$resourceVersion];
+        $resVersions = array_map('strtolower', $resVersions);
+
+        return in_array(strtolower($requestVersion), $resVersions, true);
     }
 }

@@ -59,7 +59,7 @@ namespace Tests\Feature {
             ];
 
             $routes = Services::routes();
-            \Jengo\Api\Router::publish($routes, ['only' => ['get', 'post']]);
+            \Jengo\Api\Router::publish($routes, new \Jengo\Api\Support\RouterOptions(only: ['get', 'post']));
 
             $this->db->table('temp_api_table')->insert(['title' => 'Initial Title']);
 
@@ -155,10 +155,9 @@ namespace Tests\Feature {
             $routes = Services::routes(false);
             Services::injectMock('routes', $routes);
 
-            \Jengo\Api\Router::publish($routes, [
-                'docs' => 'my-swagger-custom',
-                'docs_ui' => 'my-swagger-ui'
-            ]);
+            \Jengo\Api\Router::publish($routes, new \Jengo\Api\Support\RouterOptions(
+                docs: new \Jengo\Api\Support\DocsOptions('my-swagger-custom', 'my-swagger-ui')
+            ));
             $routesList = $routes->getRoutes('GET');
             $this->assertArrayHasKey('my-swagger-custom', $routesList);
             $this->assertArrayHasKey('my-swagger-ui', $routesList);
@@ -222,14 +221,62 @@ namespace Tests\Feature {
             $routes = Services::routes(false);
             Services::injectMock('routes', $routes);
 
-            \Jengo\Api\Router::publish($routes, [
-                'version' => 'v1'
-            ]);
+            \Jengo\Api\Router::publish($routes, new \Jengo\Api\Support\RouterOptions(
+                version: 'v1'
+            ));
 
             $routesList = $routes->getRoutes('GET');
             $this->assertArrayHasKey('v1/docs', $routesList);
             $this->assertArrayHasKey('v1/docs/ui', $routesList);
             $this->assertArrayHasKey('v1/([^/]+)', $routesList);
+        }
+
+        public function testRouterOptionsDtoUsage(): void
+        {
+            $routes = Services::routes(false);
+            Services::injectMock('routes', $routes);
+
+            $options = new \Jengo\Api\Support\RouterOptions(
+                version: 'v2',
+                docs: new \Jengo\Api\Support\DocsOptions('my-v2-swagger', 'my-v2-swagger-ui')
+            );
+
+            \Jengo\Api\Router::publish($routes, $options);
+
+            $routesList = $routes->getRoutes('GET');
+            $this->assertArrayHasKey('v2/my-v2-swagger', $routesList);
+            $this->assertArrayHasKey('v2/my-v2-swagger-ui', $routesList);
+        }
+
+        public function testRouterOptionsChainedMutation(): void
+        {
+            $routes = Services::routes(false);
+            Services::injectMock('routes', $routes);
+
+            $v1Options = new \Jengo\Api\Support\RouterOptions(
+                version: 'v1',
+                docs: new \Jengo\Api\Support\DocsOptions(route: 'docs.json', uiRoute: 'docs')
+            );
+
+            \Jengo\Api\Router::publish($routes, $v1Options)->mutate(
+                new \Jengo\Api\Support\RouterOptions(version: 'v2')
+            );
+
+            $routesList = $routes->getRoutes('GET');
+            $this->assertArrayHasKey('v1/docs.json', $routesList);
+            $this->assertArrayHasKey('v1/docs', $routesList);
+            $this->assertArrayHasKey('v2/docs.json', $routesList);
+            $this->assertArrayHasKey('v2/docs', $routesList);
+        }
+
+        public function testResourceConfigArrayVersion(): void
+        {
+            $versionArray = ['v1', 'v2'];
+            $this->assertTrue(\Jengo\Api\Services\RequestProcessor::matchVersion($versionArray, 'v1'));
+            $this->assertTrue(\Jengo\Api\Services\RequestProcessor::matchVersion($versionArray, 'v2'));
+            $this->assertFalse(\Jengo\Api\Services\RequestProcessor::matchVersion($versionArray, 'v3'));
+            $this->assertFalse(\Jengo\Api\Services\RequestProcessor::matchVersion($versionArray, null));
+            $this->assertTrue(\Jengo\Api\Services\RequestProcessor::matchVersion(null, 'v1'));
         }
 
         public function testShieldAuthIntegration(): void

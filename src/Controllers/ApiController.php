@@ -6,6 +6,7 @@ namespace Jengo\Api\Controllers;
 
 use CodeIgniter\API\ResponseTrait;
 use CodeIgniter\Controller;
+use CodeIgniter\Exceptions\PageNotFoundException;
 use Jengo\Api\Contracts\ResourceConfigInterface;
 use Jengo\Api\Exceptions\ApiException;
 use Jengo\Api\Services\RequestProcessor;
@@ -32,41 +33,23 @@ class ApiController extends Controller
     {
         helper('url');
         
-        $jsonUrl = site_url(str_replace('docs/ui', 'docs', $this->request->getPath()));
+        $currentPath = trim($this->request->getPath(), '/');
+        $version = RequestProcessor::extractVersion($currentPath);
+        $routeName = ($version ? $version . '-' : '') . 'api-docs';
+        
+        try {
+            $jsonUrl = url_to($routeName);
+        } catch (\Throwable $e) {
+            $jsonUrl = site_url($version ? $version . '/docs' : 'docs');
+        }
 
-        $html = <<<HTML
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="description" content="Swagger UI for Jengo API" />
-    <title>Jengo API Documentation</title>
-    <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5.11.0/swagger-ui.css" />
-</head>
-<body>
-    <div id="swagger-ui"></div>
-    <script src="https://unpkg.com/swagger-ui-dist@5.11.0/swagger-ui-bundle.js"></script>
-    <script src="https://unpkg.com/swagger-ui-dist@5.11.0/swagger-ui-standalone-preset.js"></script>
-    <script>
-        window.onload = () => {
-            window.ui = SwaggerUIBundle({
-                url: '{$jsonUrl}',
-                dom_id: '#swagger-ui',
-                deepLinking: true,
-                presets: [
-                    SwaggerUIBundle.presets.apis,
-                    SwaggerUIStandalonePreset
-                ],
-                layout: "StandaloneLayout"
-            });
-        };
-    </script>
-</body>
-</html>
-HTML;
+        $config = config('JengoApi');
+        $apiName = $config->apiName ?? 'Jengo Auto-Generated API';
 
-        return $this->response->setBody($html);
+        return $this->response->setBody(view('Jengo\Api\Views\swagger_ui', [
+            'jsonUrl' => $jsonUrl,
+            'apiName' => $apiName
+        ]));
     }
 
     public function index(string $resource)
@@ -75,7 +58,7 @@ HTML;
             RequestProcessor::process($resource, 'get', $this->request);
 
             $query = query($resource)->mode(QueryMode::OPEN);
-            
+
             $instance = $this->getResourceInstance($resource);
             if ($instance) {
                 $instance->beforeQuery($query);
@@ -323,14 +306,9 @@ HTML;
             if (class_exists($resClass)) {
                 $resObj = new $resClass();
                 if ($resObj instanceof ResourceConfigInterface && $resObj->name() === $resource) {
-                    $resVersion = $resObj->version();
-                    if ($version !== null && $resVersion !== $version) {
-                        continue;
+                    if (RequestProcessor::matchVersion($resObj->version(), $version)) {
+                        return $resObj;
                     }
-                    if ($version === null && $resVersion !== null) {
-                        continue;
-                    }
-                    return $resObj;
                 }
             }
         }
@@ -372,7 +350,7 @@ HTML;
                     if (is_array($childPayload)) {
                         $childId = $childPayload['id'] ?? null;
                         $childResource = $relation->name;
-                        
+
                         $childId = $this->saveResource($childResource, $childPayload, $childId);
                         $payload[$relation->fromField] = $childId;
                     }
