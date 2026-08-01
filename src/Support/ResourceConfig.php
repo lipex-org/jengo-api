@@ -65,22 +65,22 @@ abstract class ResourceConfig implements ResourceConfigInterface
         return $this->obfuscatedFields;
     }
 
-    public function beforeSave(array $data): array
+    public function beforeSave(array $data, ?HookContext $context = null): array
     {
         return $data;
     }
 
-    public function afterSave(array $record): array
+    public function afterSave(array $record, ?HookContext $context = null): array
     {
         return $record;
     }
 
-    public function beforeQuery($query): void
+    public function beforeQuery($query, ?HookContext $context = null): void
     {
         // No-op
     }
 
-    public function afterQuery(array $data): array
+    public function afterQuery(array $data, ?HookContext $context = null): array
     {
         return $data;
     }

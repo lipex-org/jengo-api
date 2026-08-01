@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Jengo\Api\Contracts;
 
+use Jengo\Api\Support\HookContext;
+
 interface ResourceConfigInterface
 {
     /**
@@ -57,22 +59,22 @@ interface ResourceConfigInterface
     /**
      * Hook run before a record is created or updated.
      */
-    public function beforeSave(array $data): array;
+    public function beforeSave(array $data, ?HookContext $context = null): array;
 
     /**
      * Hook run after a record is created or updated.
      */
-    public function afterSave(array $record): array;
+    public function afterSave(array $record, ?HookContext $context = null): array;
 
     /**
      * Hook run before query execution (GET collection/single).
      * Allows dynamically modifying the Jengo Query Builder query.
      */
-    public function beforeQuery($query): void;
+    public function beforeQuery($query, ?HookContext $context = null): void;
 
     /**
      * Hook run after query execution.
      * Allows transforming the queried records array.
      */
-    public function afterQuery(array $data): array;
+    public function afterQuery(array $data, ?HookContext $context = null): array;
 }

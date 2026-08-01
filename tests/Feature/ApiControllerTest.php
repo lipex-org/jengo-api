@@ -408,7 +408,7 @@ namespace Tests\Feature {
             return 'temp_api_table';
         }
 
-        public function afterQuery(array $data): array
+        public function afterQuery(array $data, ?\Jengo\Api\Support\HookContext $context = null): array
         {
             foreach ($data as $row) {
                 if (is_object($row)) {

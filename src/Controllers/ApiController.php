@@ -10,6 +10,7 @@ use CodeIgniter\Exceptions\PageNotFoundException;
 use Jengo\Api\Contracts\ResourceConfigInterface;
 use Jengo\Api\Exceptions\ApiException;
 use Jengo\Api\Services\RequestProcessor;
+use Jengo\Api\Support\HookContext;
 use Jengo\Schema\Query\Enums\QueryMode;
 use Jengo\Schema\Reflection\SchemaReflector;
 use function Jengo\Schema\query;
@@ -57,18 +58,22 @@ class ApiController extends Controller
         try {
             RequestProcessor::process($resource, 'get', $this->request);
 
-            $query = query($resource)->mode(QueryMode::OPEN);
+            $currentPath = trim($this->request->getPath(), '/');
+            $version = RequestProcessor::extractVersion($currentPath);
+            $context = new HookContext($version, $resource, 'get');
 
+            $query = query($resource)->mode(QueryMode::OPEN);
+            
             $instance = $this->getResourceInstance($resource);
             if ($instance) {
-                $instance->beforeQuery($query);
+                $instance->beforeQuery($query, $context);
             }
 
             $result = $query->get();
 
             $data = $result->data;
             if ($instance) {
-                $data = $instance->afterQuery($data);
+                $data = $instance->afterQuery($data, $context);
             }
 
             return $this->respond([
@@ -92,6 +97,10 @@ class ApiController extends Controller
         try {
             RequestProcessor::process($resource, 'get', $this->request);
 
+            $currentPath = trim($this->request->getPath(), '/');
+            $version = RequestProcessor::extractVersion($currentPath);
+            $context = new HookContext($version, $resource, 'get');
+
             $instance = $this->getResourceInstance($resource);
             if ($instance && in_array('id', $instance->obfuscatedFields(), true)) {
                 helper('jengo');
@@ -100,7 +109,7 @@ class ApiController extends Controller
 
             $query = query($resource)->mode(QueryMode::OPEN);
             if ($instance) {
-                $instance->beforeQuery($query);
+                $instance->beforeQuery($query, $context);
             }
 
             $result = $query->find($id);
@@ -110,7 +119,7 @@ class ApiController extends Controller
             }
 
             if ($instance) {
-                $result = $instance->afterQuery([$result])[0] ?? null;
+                $result = $instance->afterQuery([$result], $context)[0] ?? null;
             }
 
             return $this->respond([
@@ -134,6 +143,10 @@ class ApiController extends Controller
             $resourceConfig = RequestProcessor::process($resource, 'post', $this->request);
             $formClass = $resourceConfig['form'] ?? null;
 
+            $currentPath = trim($this->request->getPath(), '/');
+            $version = RequestProcessor::extractVersion($currentPath);
+            $context = new HookContext($version, $resource, 'post');
+
             if ($formClass && class_exists($formClass)) {
                 $form = new $formClass($this->request);
                 if (!$form->validate()) {
@@ -153,14 +166,14 @@ class ApiController extends Controller
 
             $instance = $this->getResourceInstance($resource);
             if ($instance) {
-                $payload = $instance->beforeSave($payload);
+                $payload = $instance->beforeSave($payload, $context);
             }
 
             $id = $this->saveResource($resource, $payload);
 
             $record = query($resource)->find($id);
             if ($instance && $record) {
-                $record = $instance->afterSave(is_object($record) ? (array) $record : $record);
+                $record = $instance->afterSave(is_object($record) ? (array) $record : $record, $context);
             }
 
             return $this->respondCreated([
@@ -195,6 +208,11 @@ class ApiController extends Controller
             $resourceConfig = RequestProcessor::process($resource, 'put', $this->request);
             $formClass = $resourceConfig['form'] ?? null;
 
+            $currentPath = trim($this->request->getPath(), '/');
+            $version = RequestProcessor::extractVersion($currentPath);
+            $method = $this->request->getMethod(true);
+            $context = new HookContext($version, $resource, $method);
+
             $instance = $this->getResourceInstance($resource);
             if ($instance && in_array('id', $instance->obfuscatedFields(), true)) {
                 helper('jengo');
@@ -219,14 +237,14 @@ class ApiController extends Controller
             }
 
             if ($instance) {
-                $payload = $instance->beforeSave($payload);
+                $payload = $instance->beforeSave($payload, $context);
             }
 
             $this->saveResource($resource, $payload, $id);
 
             $record = query($resource)->find($id);
             if ($instance && $record) {
-                $record = $instance->afterSave(is_object($record) ? (array) $record : $record);
+                $record = $instance->afterSave(is_object($record) ? (array) $record : $record, $context);
             }
 
             return $this->respond([
@@ -350,7 +368,7 @@ class ApiController extends Controller
                     if (is_array($childPayload)) {
                         $childId = $childPayload['id'] ?? null;
                         $childResource = $relation->name;
-
+                        
                         $childId = $this->saveResource($childResource, $childPayload, $childId);
                         $payload[$relation->fromField] = $childId;
                     }
