@@ -35,6 +35,7 @@ class SwaggerGenerator
                 ]
             ],
             'paths' => [],
+            'tags' => [],
             'components' => [
                 'schemas' => [],
             ],
@@ -89,6 +90,12 @@ class SwaggerGenerator
                 'properties' => $properties,
             ];
 
+            // Add resource-level Swagger tag
+            $openapi['tags'][] = [
+                'name' => $schemaName,
+                'description' => "Operations related to the {$name} resource.",
+            ];
+
             $prefix = $version ? "/{$version}" : '';
             $listPath = "{$prefix}/{$name}";
             $openapi['paths'][$listPath] = [];
@@ -140,6 +147,7 @@ class SwaggerGenerator
                 }
 
                 $openapi['paths'][$listPath]['get'] = [
+                    'tags' => [$schemaName],
                     'summary' => "Retrieve a paginated collection of {$name}",
                     'parameters' => $parameters,
                     'responses' => [
@@ -166,6 +174,7 @@ class SwaggerGenerator
 
             if (in_array('post', $exposedMethods, true)) {
                 $openapi['paths'][$listPath]['post'] = [
+                    'tags' => [$schemaName],
                     'summary' => "Create a new {$name} record",
                     'requestBody' => [
                         'required' => true,
@@ -201,6 +210,7 @@ class SwaggerGenerator
 
             if (in_array('get', $exposedMethods, true)) {
                 $openapi['paths'][$itemPath]['get'] = [
+                    'tags' => [$schemaName],
                     'summary' => "Retrieve a single {$name} record by ID",
                     'parameters' => [
                         [
@@ -232,6 +242,7 @@ class SwaggerGenerator
             if (in_array('put', $exposedMethods, true) || in_array('patch', $exposedMethods, true)) {
                 $methodKey = in_array('put', $exposedMethods, true) ? 'put' : 'patch';
                 $openapi['paths'][$itemPath][$methodKey] = [
+                    'tags' => [$schemaName],
                     'summary' => "Update an existing {$name} record by ID",
                     'parameters' => [
                         [
@@ -272,6 +283,7 @@ class SwaggerGenerator
 
             if (in_array('delete', $exposedMethods, true)) {
                 $openapi['paths'][$itemPath]['delete'] = [
+                    'tags' => [$schemaName],
                     'summary' => "Delete a {$name} record by ID",
                     'parameters' => [
                         [

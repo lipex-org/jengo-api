@@ -10,7 +10,7 @@ abstract class ResourceConfig implements ResourceConfigInterface
 {
     protected array $exposedMethods = ['get', 'post', 'put', 'patch', 'delete'];
     protected ?string $formClass = null;
-    protected array $capabilities = ['pagination', 'search', 'sort'];
+    protected array $capabilities = ['pagination', 'sort'];
     protected array $allowedRelations = [];
     protected int $maxLimit = 100;
     protected array $obfuscatedFields = [];

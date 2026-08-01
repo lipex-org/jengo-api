@@ -6,13 +6,13 @@ namespace Jengo\Api\Controllers;
 
 use CodeIgniter\API\ResponseTrait;
 use CodeIgniter\Controller;
-use CodeIgniter\Exceptions\PageNotFoundException;
 use Jengo\Api\Contracts\ResourceConfigInterface;
 use Jengo\Api\Exceptions\ApiException;
 use Jengo\Api\Services\RequestProcessor;
+use Jengo\Api\Services\SwaggerGenerator;
 use Jengo\Api\Support\HookContext;
-use Jengo\Schema\Query\Enums\QueryMode;
 use Jengo\Schema\Reflection\SchemaReflector;
+use Throwable;
 use function Jengo\Schema\query;
 
 class ApiController extends Controller
@@ -20,51 +20,16 @@ class ApiController extends Controller
     use ResponseTrait;
     protected $format = 'json';
 
-    public function docs()
-    {
-        try {
-            $currentPath = trim($this->request->getPath(), '/');
-            $version = RequestProcessor::extractVersion($currentPath);
-            $spec = \Jengo\Api\Services\SwaggerGenerator::generate($version);
-            return $this->respond($spec);
-        } catch (\Throwable $e) {
-            return $this->respondProblem('Internal Server Error', 500, $e->getMessage());
-        }
-    }
-
-    public function docsUi()
-    {
-        helper('url');
-
-        $currentPath = trim($this->request->getPath(), '/');
-        $version = RequestProcessor::extractVersion($currentPath);
-        $routeName = ($version ? $version . '-' : '') . 'api-docs';
-
-        try {
-            $jsonUrl = url_to($routeName);
-        } catch (\Throwable $e) {
-            $jsonUrl = site_url($version ? $version . '/docs' : 'docs');
-        }
-
-        $config = config('JengoApi');
-        $apiName = $config->apiName ?? 'Jengo Auto-Generated API';
-
-        return $this->response->setBody(view('Jengo\Api\Views\swagger_ui', [
-            'jsonUrl' => $jsonUrl,
-            'apiName' => $apiName
-        ]));
-    }
-
     public function index(string $resource)
     {
         try {
-            RequestProcessor::process($resource, 'get', $this->request);
+            $resourceConfig = RequestProcessor::process($resource, 'get', $this->request);
 
             $currentPath = trim($this->request->getPath(), '/');
             $version = RequestProcessor::extractVersion($currentPath);
             $context = new HookContext($version, $resource, 'get');
 
-            $query = query($resource)->mode(QueryMode::OPEN);
+            $query = query($resource)->open($resourceConfig['capabilities'] ?? []);
 
             $instance = $this->getResourceInstance($resource);
             if ($instance) {
@@ -97,7 +62,7 @@ class ApiController extends Controller
     public function show(string $resource, string $id)
     {
         try {
-            RequestProcessor::process($resource, 'get', $this->request);
+            $resourceConfig = RequestProcessor::process($resource, 'get', $this->request);
 
             $currentPath = trim($this->request->getPath(), '/');
             $version = RequestProcessor::extractVersion($currentPath);
@@ -109,7 +74,7 @@ class ApiController extends Controller
                 $id = (string) sqids_unhash($id);
             }
 
-            $query = query($resource)->mode(QueryMode::OPEN);
+            $query = query($resource)->open($resourceConfig['capabilities'] ?? []);
             if ($instance) {
                 $instance->beforeQuery($query, $context);
             }
@@ -378,6 +343,42 @@ class ApiController extends Controller
         } catch (\Throwable $e) {
             return $this->respondProblem('Internal Server Error', 500, $e->getMessage());
         }
+    }
+
+
+    public function docs()
+    {
+        try {
+            $currentPath = trim($this->request->getPath(), '/');
+            $version = RequestProcessor::extractVersion($currentPath);
+            $spec = SwaggerGenerator::generate($version);
+            return $this->respond($spec);
+        } catch (\Throwable $e) {
+            return $this->respondProblem('Internal Server Error', 500, $e->getMessage());
+        }
+    }
+
+    public function docsUi()
+    {
+        helper('url');
+
+        $currentPath = trim($this->request->getPath(), '/');
+        $version = RequestProcessor::extractVersion($currentPath);
+        $routeName = ($version ? $version . '-' : '') . 'api-docs';
+
+        try {
+            $jsonUrl = url_to($routeName);
+        } catch (Throwable $e) {
+            $jsonUrl = site_url($version ? $version . '/docs' : 'docs');
+        }
+
+        $config = config('JengoApi');
+        $apiName = $config->apiName ?? 'Jengo Auto-Generated API';
+
+        return $this->response->setBody(view('Jengo\Api\Views\swagger_ui', [
+            'jsonUrl' => $jsonUrl,
+            'apiName' => $apiName
+        ]));
     }
 
     /**
