@@ -12,7 +12,7 @@ class SwaggerGenerator
     /**
      * Compile active API resource configurations and database schemas to OpenAPI 3.0.
      */
-    public static function generate(): array
+    public static function generate(?string $version = null): array
     {
         $config = config('JengoApi');
         $apiName = $config->apiName ?? 'Jengo Auto-Generated API';
@@ -50,6 +50,11 @@ class SwaggerGenerator
                 continue;
             }
 
+            // Filter resources by target version
+            if (!RequestProcessor::matchVersion($resObj->version(), $version)) {
+                continue;
+            }
+
             $name = $resObj->name();
             $exposedMethods = array_map('strtolower', $resObj->exposedMethods());
             $capabilities = $resObj->capabilities();
@@ -84,7 +89,8 @@ class SwaggerGenerator
                 'properties' => $properties,
             ];
 
-            $listPath = "/{$name}";
+            $prefix = $version ? "/{$version}" : '';
+            $listPath = "{$prefix}/{$name}";
             $openapi['paths'][$listPath] = [];
 
             if (in_array('get', $exposedMethods, true)) {
@@ -190,7 +196,7 @@ class SwaggerGenerator
                 ];
             }
 
-            $itemPath = "/{$name}/{id}";
+            $itemPath = "{$prefix}/{$name}/{id}";
             $openapi['paths'][$itemPath] = [];
 
             if (in_array('get', $exposedMethods, true)) {

@@ -80,6 +80,8 @@ class Router
                 $register('get', '/', [ApiController::class, 'index']);
                 $register('get', '(:segment)', [ApiController::class, 'show']);
                 $register('post', '/', [ApiController::class, 'create']);
+                $register('put', '/', [ApiController::class, 'update']);
+                $register('patch', '/', [ApiController::class, 'update']);
                 $register('put', '(:segment)', [ApiController::class, 'update']);
                 $register('patch', '(:segment)', [ApiController::class, 'update']);
                 $register('delete', '(:segment)', [ApiController::class, 'delete']);

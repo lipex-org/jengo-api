@@ -23,7 +23,9 @@ class ApiController extends Controller
     public function docs()
     {
         try {
-            $spec = \Jengo\Api\Services\SwaggerGenerator::generate();
+            $currentPath = trim($this->request->getPath(), '/');
+            $version = RequestProcessor::extractVersion($currentPath);
+            $spec = \Jengo\Api\Services\SwaggerGenerator::generate($version);
             return $this->respond($spec);
         } catch (\Throwable $e) {
             return $this->respondProblem('Internal Server Error', 500, $e->getMessage());
@@ -33,11 +35,11 @@ class ApiController extends Controller
     public function docsUi()
     {
         helper('url');
-        
+
         $currentPath = trim($this->request->getPath(), '/');
         $version = RequestProcessor::extractVersion($currentPath);
         $routeName = ($version ? $version . '-' : '') . 'api-docs';
-        
+
         try {
             $jsonUrl = url_to($routeName);
         } catch (\Throwable $e) {
@@ -63,7 +65,7 @@ class ApiController extends Controller
             $context = new HookContext($version, $resource, 'get');
 
             $query = query($resource)->mode(QueryMode::OPEN);
-            
+
             $instance = $this->getResourceInstance($resource);
             if ($instance) {
                 $instance->beforeQuery($query, $context);
@@ -147,38 +149,64 @@ class ApiController extends Controller
             $version = RequestProcessor::extractVersion($currentPath);
             $context = new HookContext($version, $resource, 'post');
 
-            if ($formClass && class_exists($formClass)) {
-                $form = new $formClass($this->request);
-                if (!$form->validate()) {
-                    $invalidParams = [];
-                    foreach ($form->getErrors() as $field => $error) {
-                        $invalidParams[] = [
-                            'name' => $field,
-                            'reason' => $error
-                        ];
+            $rawPayload = $this->request->getJSON(true) ?? $this->request->getPost() ?? [];
+            $isBulk = is_array($rawPayload) && isset($rawPayload[0]) && is_array($rawPayload[0]);
+
+            $items = $isBulk ? $rawPayload : [$rawPayload];
+            $processedItems = [];
+
+            $db = db_connect();
+            $db->transBegin();
+
+            try {
+                foreach ($items as $item) {
+                    if ($formClass && class_exists($formClass)) {
+                        $itemRequest = clone $this->request;
+                        $itemRequest->setBody(json_encode($item));
+
+                        $form = new $formClass($itemRequest);
+                        if (!$form->validate()) {
+                            $invalidParams = [];
+                            foreach ($form->getErrors() as $field => $error) {
+                                $invalidParams[] = [
+                                    'name' => $field,
+                                    'reason' => $error
+                                ];
+                            }
+                            throw new ApiException(json_encode([
+                                'title' => 'Validation Failed',
+                                'detail' => 'One or more items in the batch failed validation.',
+                                'invalid_params' => $invalidParams
+                            ]), 422);
+                        }
+                        $itemPayload = $form->validated()->toArray();
+                    } else {
+                        $itemPayload = $item;
                     }
-                    return $this->respondProblem('Validation Failed', 422, 'The request payload failed validation checks.', $invalidParams);
+
+                    $instance = $this->getResourceInstance($resource);
+                    if ($instance) {
+                        $itemPayload = $instance->beforeSave($itemPayload, $context);
+                    }
+
+                    $id = $this->saveResource($resource, $itemPayload);
+
+                    $record = query($resource)->find($id);
+                    if ($instance && $record) {
+                        $record = $instance->afterSave(is_object($record) ? (array) $record : $record, $context);
+                    }
+                    $processedItems[] = $record;
                 }
-                $payload = $form->validated()->toArray();
-            } else {
-                $payload = $this->request->getJSON(true) ?? $this->request->getPost();
-            }
 
-            $instance = $this->getResourceInstance($resource);
-            if ($instance) {
-                $payload = $instance->beforeSave($payload, $context);
-            }
-
-            $id = $this->saveResource($resource, $payload);
-
-            $record = query($resource)->find($id);
-            if ($instance && $record) {
-                $record = $instance->afterSave(is_object($record) ? (array) $record : $record, $context);
+                $db->transCommit();
+            } catch (\Throwable $e) {
+                $db->transRollback();
+                throw $e;
             }
 
             return $this->respondCreated([
                 'status' => 'success',
-                'data' => $record
+                'data' => $isBulk ? $processedItems : ($processedItems[0] ?? null)
             ]);
         } catch (ApiException $e) {
             $data = json_decode($e->getMessage(), true);
@@ -202,7 +230,7 @@ class ApiController extends Controller
         }
     }
 
-    public function update(string $resource, string $id)
+    public function update(string $resource, ?string $id = null)
     {
         try {
             $resourceConfig = RequestProcessor::process($resource, 'put', $this->request);
@@ -213,43 +241,82 @@ class ApiController extends Controller
             $method = $this->request->getMethod(true);
             $context = new HookContext($version, $resource, $method);
 
-            $instance = $this->getResourceInstance($resource);
-            if ($instance && in_array('id', $instance->obfuscatedFields(), true)) {
-                helper('jengo');
-                $id = (string) sqids_unhash($id);
-            }
+            $rawPayload = $this->request->getJSON(true) ?? $this->request->getRawInput() ?? [];
+            $isBulk = is_array($rawPayload) && isset($rawPayload[0]) && is_array($rawPayload[0]);
 
-            if ($formClass && class_exists($formClass)) {
-                $form = new $formClass($this->request);
-                if (!$form->validate()) {
-                    $invalidParams = [];
-                    foreach ($form->getErrors() as $field => $error) {
-                        $invalidParams[] = [
-                            'name' => $field,
-                            'reason' => $error
-                        ];
+            $items = $isBulk ? $rawPayload : [$rawPayload];
+            $processedItems = [];
+
+            $db = db_connect();
+            $db->transBegin();
+
+            try {
+                foreach ($items as $item) {
+                    $itemId = $id;
+                    if ($isBulk) {
+                        $itemId = $item['id'] ?? null;
+                        if ($itemId === null) {
+                            throw new ApiException(json_encode([
+                                'title' => 'Missing ID',
+                                'detail' => 'Each item in a bulk update batch must contain an ID.'
+                            ]), 400);
+                        }
                     }
-                    return $this->respondProblem('Validation Failed', 422, 'The request payload failed validation checks.', $invalidParams);
+
+                    $instance = $this->getResourceInstance($resource);
+                    if ($instance && in_array('id', $instance->obfuscatedFields(), true)) {
+                        helper('jengo');
+                        $itemId = (string) sqids_unhash((string) $itemId);
+                    }
+
+                    if ($formClass && class_exists($formClass)) {
+                        $itemRequest = clone $this->request;
+                        $itemRequest->setBody(json_encode($item));
+
+                        $form = new $formClass($itemRequest);
+                        if (!$form->validate()) {
+                            $invalidParams = [];
+                            foreach ($form->getErrors() as $field => $error) {
+                                $invalidParams[] = [
+                                    'name' => $field,
+                                    'reason' => $error
+                                ];
+                            }
+                            throw new ApiException(json_encode([
+                                'title' => 'Validation Failed',
+                                'detail' => 'One or more items in the batch failed validation.',
+                                'invalid_params' => $invalidParams
+                            ]), 422);
+                        }
+                        $itemPayload = $form->validated()->toArray();
+                    } else {
+                        $itemPayload = $item;
+                    }
+
+                    if ($instance) {
+                        $itemPayload = $instance->beforeSave($itemPayload, $context);
+                    }
+
+                    unset($itemPayload['id']);
+
+                    $this->saveResource($resource, $itemPayload, $itemId);
+
+                    $record = query($resource)->find($itemId);
+                    if ($instance && $record) {
+                        $record = $instance->afterSave(is_object($record) ? (array) $record : $record, $context);
+                    }
+                    $processedItems[] = $record;
                 }
-                $payload = $form->validated()->toArray();
-            } else {
-                $payload = $this->request->getJSON(true) ?? $this->request->getRawInput();
-            }
 
-            if ($instance) {
-                $payload = $instance->beforeSave($payload, $context);
-            }
-
-            $this->saveResource($resource, $payload, $id);
-
-            $record = query($resource)->find($id);
-            if ($instance && $record) {
-                $record = $instance->afterSave(is_object($record) ? (array) $record : $record, $context);
+                $db->transCommit();
+            } catch (\Throwable $e) {
+                $db->transRollback();
+                throw $e;
             }
 
             return $this->respond([
                 'status' => 'success',
-                'data' => $record
+                'data' => $isBulk ? $processedItems : ($processedItems[0] ?? null)
             ]);
         } catch (ApiException $e) {
             $data = json_decode($e->getMessage(), true);
@@ -357,7 +424,7 @@ class ApiController extends Controller
             }
         }
 
-        $db = \Config\Database::connect();
+        $db = db_connect();
         $db->transBegin();
 
         try {
@@ -368,7 +435,7 @@ class ApiController extends Controller
                     if (is_array($childPayload)) {
                         $childId = $childPayload['id'] ?? null;
                         $childResource = $relation->name;
-                        
+
                         $childId = $this->saveResource($childResource, $childPayload, $childId);
                         $payload[$relation->fromField] = $childId;
                     }

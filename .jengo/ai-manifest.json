@@ -1,0 +1,83 @@
+{
+  "name": "jengo/api",
+  "description": "Automated REST API engine for the Jengo framework. Provides automatic CRUD routing, OpenAPI/Swagger generation, transactional relationship mutations, dynamic FormHandler payload validations, Sqids-based URL ID obfuscation, version namespace prefix grouping, and CodeIgniter Shield authentication integration.",
+  "routing": [
+    {
+      "class": "Jengo\\Api\\Router",
+      "description": "Stateful, chainable route publisher that registers dynamic REST paths and Swagger endpoints for exposed Jengo API resources.",
+      "methods": {
+        "publish": "publish(RouteCollection $routes, ?RouterOptions $options = null): Router (registers routes and returns a Router instance for chaining)",
+        "mutate": "mutate(RouterOptions $overrides): Router (creates a cloned Router instance with overrides applied, automatically publishing the new versioned routes)"
+      },
+      "usage": "Router::publish($routes, new RouterOptions(version: 'v1'))->mutate(new RouterOptions(version: 'v2'));"
+    }
+  ],
+  "options": [
+    {
+      "class": "Jengo\\Api\\Support\\RouterOptions",
+      "description": "DTO defining route publication filters, active version, and documentation routing parameters.",
+      "properties": {
+        "except": "array of HTTP verbs to exclude from routing",
+        "only": "array of HTTP verbs to exclusively register",
+        "version": "version prefix (e.g. 'v1') to namespace the routes group",
+        "docs": "instance of DocsOptions defining documentation configurations"
+      }
+    },
+    {
+      "class": "Jengo\\Api\\Support\\DocsOptions",
+      "description": "DTO defining routes and visibility for Swagger JSON and the interactive UI.",
+      "properties": {
+        "route": "string route prefix for documentation JSON (default: 'docs'), or false to disable",
+        "uiRoute": "string route prefix for interactive Swagger UI (default: 'docs/ui'), or false to disable"
+      }
+    }
+  ],
+  "resources": [
+    {
+      "class": "Jengo\\Api\\Support\\ResourceConfig",
+      "description": "Abstract base class for defining Jengo API policies, Sqids obfuscation rules, validation mappings, and lifecycle hooks.",
+      "properties": {
+        "exposedMethods": "array of allowed HTTP verbs (default: ['get', 'post', 'put', 'patch', 'delete'])",
+        "formClass": "FormHandler class name to validate request body inputs",
+        "capabilities": "array of allowed GET query parameters (pagination, search, sort)",
+        "allowedRelations": "array of allowed relation derivations to load dynamically",
+        "maxLimit": "integer cap for maximum GET collection limits (default: 100)",
+        "obfuscatedFields": "array of fields to encode/decode using Sqids",
+        "version": "string, array, or null version matching restriction (e.g. 'v1' or ['v1', 'v2'])",
+        "requiredAuth": "array mapping HTTP verbs to required permissions (e.g. ['get' => 'users.read', 'post' => true])"
+      },
+      "methods": {
+        "beforeSave": "beforeSave(array $data, ?HookContext $context = null): array (runs prior to creating/updating records to mutate payload)",
+        "afterSave": "afterSave(array $record, ?HookContext $context = null): array (runs after record write triggers to transform output)",
+        "beforeQuery": "beforeQuery($query, ?HookContext $context = null): void (runs prior to database select to inject custom criteria)",
+        "afterQuery": "afterQuery(array $data, ?HookContext $context = null): array (runs after database select to filter or enrich return collections)"
+      }
+    },
+    {
+      "class": "Jengo\\Api\\Support\\HookContext",
+      "description": "DTO injected into lifecycle hooks carrying request-specific information.",
+      "properties": {
+        "version": "string active version prefix of the request (e.g. 'v1')",
+        "resource": "string resource name being accessed (e.g. 'users')",
+        "method": "string HTTP request method (e.g. 'get', 'post')",
+        "metadata": "array of additional context metadata"
+      }
+    }
+  ],
+  "views": [
+    {
+      "path": "Jengo\\Api\\Views\\swagger_ui",
+      "description": "Namespace-resolved view file rendering the interactive Swagger UI and binding the documentation JSON endpoint URL."
+    }
+  ],
+  "commands": [
+    {
+      "name": "jengo:api setup",
+      "description": "Initial setup command for the API package. Publishes the JengoApi configuration class inheriting from BaseJengoApi and registers routes inside app/Config/Routes.php."
+    },
+    {
+      "name": "jengo:make api_resource <name>",
+      "description": "Generates a new ResourceConfig class boilerplate, with full support for CodeIgniter code modules."
+    }
+  ]
+}

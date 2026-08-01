@@ -279,6 +279,65 @@ namespace Tests\Feature {
             $this->assertTrue(\Jengo\Api\Services\RequestProcessor::matchVersion(null, 'v1'));
         }
 
+        public function testBulkWritesAndMutations(): void
+        {
+            $forge = \Config\Database::forge('tests');
+            $forge->addField([
+                'id' => ['type' => 'INTEGER', 'auto_increment' => true],
+                'title' => ['type' => 'VARCHAR', 'constraint' => 255],
+            ]);
+            $forge->addPrimaryKey('id');
+            $forge->createTable('temp_bulk_table', true);
+
+            $config = config('JengoApi');
+            $config->resources = [
+                TempBulkResource::class
+            ];
+
+            // 1. Bulk Create
+            $request = Services::request(null, false);
+            $request->setBody(json_encode([
+                ['title' => 'Bulk Item 1'],
+                ['title' => 'Bulk Item 2']
+            ]));
+            $request->setHeader('Content-Type', 'application/json');
+
+            $controller = new \Jengo\Api\Controllers\ApiController();
+            $controller->initController($request, Services::response(), Services::logger());
+
+            $response = $controller->create('temp_bulk_table');
+            $body = json_decode($response->getBody(), true);
+
+            $this->assertSame('success', $body['status']);
+            $this->assertCount(2, $body['data']);
+            $this->assertSame('Bulk Item 1', $body['data'][0]['title']);
+            $this->assertSame('Bulk Item 2', $body['data'][1]['title']);
+
+            // 2. Bulk Update
+            $id1 = $body['data'][0]['id'];
+            $id2 = $body['data'][1]['id'];
+
+            $updateRequest = Services::request(null, false);
+            $updateRequest->setBody(json_encode([
+                ['id' => $id1, 'title' => 'Updated Bulk 1'],
+                ['id' => $id2, 'title' => 'Updated Bulk 2']
+            ]));
+            $updateRequest->setHeader('Content-Type', 'application/json');
+
+            $controller2 = new \Jengo\Api\Controllers\ApiController();
+            $controller2->initController($updateRequest, Services::response(), Services::logger());
+
+            $response2 = $controller2->update('temp_bulk_table');
+            $body2 = json_decode($response2->getBody(), true);
+
+            $this->assertSame('success', $body2['status']);
+            $this->assertCount(2, $body2['data']);
+            $this->assertSame('Updated Bulk 1', $body2['data'][0]['title']);
+            $this->assertSame('Updated Bulk 2', $body2['data'][1]['title']);
+
+            $forge->dropTable('temp_bulk_table', true);
+        }
+
         public function testShieldAuthIntegration(): void
         {
             MockShieldAuth::getInstance()->user = null;
@@ -416,6 +475,14 @@ namespace Tests\Feature {
                 }
             }
             return $data;
+        }
+    }
+
+    class TempBulkResource extends \Jengo\Api\Support\ResourceConfig
+    {
+        public function name(): string
+        {
+            return 'temp_bulk_table';
         }
     }
 }
