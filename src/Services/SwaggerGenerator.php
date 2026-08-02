@@ -209,17 +209,29 @@ class SwaggerGenerator
             $openapi['paths'][$itemPath] = [];
 
             if (in_array('get', $exposedMethods, true)) {
+                $itemParameters = [
+                    [
+                        'name' => 'id',
+                        'in' => 'path',
+                        'required' => true,
+                        'schema' => ['type' => 'string'],
+                    ],
+                ];
+
+                if (!empty($allowedRelations)) {
+                    $itemParameters[] = [
+                        'name' => 'derive',
+                        'in' => 'query',
+                        'description' => 'Comma-separated list of relationships to load: ' . implode(', ', $allowedRelations),
+                        'required' => false,
+                        'schema' => ['type' => 'string'],
+                    ];
+                }
+
                 $openapi['paths'][$itemPath]['get'] = [
                     'tags' => [$schemaName],
                     'summary' => "Retrieve a single {$name} record by ID",
-                    'parameters' => [
-                        [
-                            'name' => 'id',
-                            'in' => 'path',
-                            'required' => true,
-                            'schema' => ['type' => 'string'],
-                        ],
-                    ],
+                    'parameters' => $itemParameters,
                     'responses' => [
                         '200' => [
                             'description' => 'Success',
