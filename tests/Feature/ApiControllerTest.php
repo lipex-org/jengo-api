@@ -338,6 +338,46 @@ namespace Tests\Feature {
             $forge->dropTable('temp_bulk_table', true);
         }
 
+        public function testArrayFormClassHandling(): void
+        {
+            $forge = \Config\Database::forge('tests');
+            $forge->addField([
+                'id' => ['type' => 'INTEGER', 'auto_increment' => true],
+                'title' => ['type' => 'VARCHAR', 'constraint' => 255],
+            ]);
+            $forge->addPrimaryKey('id');
+            $forge->createTable('temp_array_form_table', true);
+
+            $config = config('JengoApi');
+            $config->resources = [
+                TempArrayFormResource::class
+            ];
+
+            // 1. POST (using MockFormHandler) should succeed!
+            $request = Services::request(null, false);
+            $request->setBody(json_encode(['title' => 'Array Form POST']));
+            $request->setHeader('Content-Type', 'application/json');
+
+            $controller = new \Jengo\Api\Controllers\ApiController();
+            $controller->initController($request, Services::response(), Services::logger());
+
+            $response = $controller->create('temp_array_form_table');
+            $body = json_decode($response->getBody(), true);
+            $this->assertSame('success', $body['status']);
+
+            // 2. PUT (using non-existent Form class) should return 404 Not Found!
+            $updateRequest = Services::request(null, false);
+            $updateRequest->setBody(json_encode(['title' => 'Array Form PUT']));
+            $updateRequest->setHeader('Content-Type', 'application/json');
+
+            $controller2 = new \Jengo\Api\Controllers\ApiController();
+            $controller2->initController($updateRequest, Services::response(), Services::logger());
+
+            $response2 = $controller2->update('temp_array_form_table', '1');
+            $this->assertSame(404, $response2->getStatusCode());
+            $forge->dropTable('temp_array_form_table', true);
+        }
+
         public function testShieldAuthIntegration(): void
         {
             MockShieldAuth::getInstance()->user = null;
@@ -437,8 +477,26 @@ namespace Tests\Feature {
         }
     }
 
+    class MockFormHandler extends \Jengo\Base\Validation\FormHandler
+    {
+        protected array $rules = [];
+
+        public function validate(?\CodeIgniter\HTTP\RequestInterface $request = null): bool
+        {
+            return true;
+        }
+
+        public function validated(): \Jengo\Base\Validation\ValidatedData
+        {
+            $raw = json_decode($this->request->getBody() ?: '{}', true) ?: $this->request->getPost();
+            return new \Jengo\Base\Validation\ValidatedData([], [], $raw);
+        }
+    }
+
     class TempUsersResource extends \Jengo\Api\Support\ResourceConfig
     {
+        protected $formClass = MockFormHandler::class;
+
         public function name(): string
         {
             return 'temp_users';
@@ -452,6 +510,8 @@ namespace Tests\Feature {
 
     class TempPostsResource extends \Jengo\Api\Support\ResourceConfig
     {
+        protected $formClass = MockFormHandler::class;
+
         public function name(): string
         {
             return 'temp_posts';
@@ -480,9 +540,27 @@ namespace Tests\Feature {
 
     class TempBulkResource extends \Jengo\Api\Support\ResourceConfig
     {
+        protected $formClass = MockFormHandler::class;
+
         public function name(): string
         {
             return 'temp_bulk_table';
+        }
+    }
+
+    class TempArrayFormResource extends \Jengo\Api\Support\ResourceConfig
+    {
+        public function __construct()
+        {
+            $this->formClass = [
+                'post' => MockFormHandler::class,
+                'put' => 'NonExistentClass'
+            ];
+        }
+
+        public function name(): string
+        {
+            return 'temp_array_form_table';
         }
     }
 }

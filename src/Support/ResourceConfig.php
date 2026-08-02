@@ -9,7 +9,10 @@ use Jengo\Api\Contracts\ResourceConfigInterface;
 abstract class ResourceConfig implements ResourceConfigInterface
 {
     protected array $exposedMethods = ['get', 'post', 'put', 'patch', 'delete'];
-    protected ?string $formClass = null;
+    /**
+     * @var string|array|null
+     */
+    protected $formClass = null;
     protected array $capabilities = ['pagination', 'sort'];
     protected array $allowedRelations = [];
     protected int $maxLimit = 100;
@@ -40,7 +43,10 @@ abstract class ResourceConfig implements ResourceConfigInterface
         return $this->exposedMethods;
     }
 
-    public function formClass(): ?string
+    /**
+     * @return string|array|null
+     */
+    public function formClass()
     {
         return $this->formClass;
     }

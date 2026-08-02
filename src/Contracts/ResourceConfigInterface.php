@@ -33,8 +33,10 @@ interface ResourceConfigInterface
 
     /**
      * Get the FormHandler class name for validation, if any.
+     *
+     * @return string|array|null
      */
-    public function formClass(): ?string;
+    public function formClass();
 
     /**
      * Get the allowed query capabilities.

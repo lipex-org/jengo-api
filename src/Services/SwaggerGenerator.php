@@ -57,7 +57,27 @@ class SwaggerGenerator
             }
 
             $name = $resObj->name();
+            $formClass = $resObj->formClass();
+
+            $postForm = is_array($formClass) ? ($formClass['post'] ?? $formClass['*'] ?? null) : $formClass;
+            $hasPostForm = !empty($postForm) && class_exists($postForm);
+
+            $putForm = is_array($formClass) ? ($formClass['put'] ?? $formClass['*'] ?? null) : $formClass;
+            $hasPutForm = !empty($putForm) && class_exists($putForm);
+
+            $patchForm = is_array($formClass) ? ($formClass['patch'] ?? $formClass['*'] ?? null) : $formClass;
+            $hasPatchForm = !empty($patchForm) && class_exists($patchForm);
+
             $exposedMethods = array_map('strtolower', $resObj->exposedMethods());
+            if (!$hasPostForm) {
+                $exposedMethods = array_diff($exposedMethods, ['post']);
+            }
+            if (!$hasPutForm) {
+                $exposedMethods = array_diff($exposedMethods, ['put']);
+            }
+            if (!$hasPatchForm) {
+                $exposedMethods = array_diff($exposedMethods, ['patch']);
+            }
             $capabilities = $resObj->capabilities();
             $allowedRelations = $resObj->allowedRelations();
             $maxLimit = $resObj->maxLimit();

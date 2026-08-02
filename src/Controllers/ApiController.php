@@ -12,6 +12,7 @@ use Jengo\Api\Services\RequestProcessor;
 use Jengo\Api\Services\SwaggerGenerator;
 use Jengo\Api\Support\HookContext;
 use Jengo\Schema\Reflection\SchemaReflector;
+use CodeIgniter\Exceptions\PageNotFoundException;
 use Throwable;
 use function Jengo\Schema\query;
 
@@ -54,6 +55,8 @@ class ApiController extends Controller
                 return $this->respondProblem($data['title'] ?? 'API Error', $e->getCode(), $data['detail'] ?? '', $data['invalid_params'] ?? []);
             }
             return $this->respondProblem('API Error', $e->getCode(), $e->getMessage());
+        } catch (PageNotFoundException $e) {
+            return $this->respondProblem('Not Found', 404, $e->getMessage());
         } catch (\Throwable $e) {
             return $this->respondProblem('Internal Server Error', 500, $e->getMessage());
         }
@@ -99,6 +102,8 @@ class ApiController extends Controller
                 return $this->respondProblem($data['title'] ?? 'API Error', $e->getCode(), $data['detail'] ?? '', $data['invalid_params'] ?? []);
             }
             return $this->respondProblem('API Error', $e->getCode(), $e->getMessage());
+        } catch (PageNotFoundException $e) {
+            return $this->respondProblem('Not Found', 404, $e->getMessage());
         } catch (\Throwable $e) {
             return $this->respondProblem('Internal Server Error', 500, $e->getMessage());
         }
@@ -108,7 +113,7 @@ class ApiController extends Controller
     {
         try {
             $resourceConfig = RequestProcessor::process($resource, 'post', $this->request);
-            $formClass = $resourceConfig['form'] ?? null;
+            $formClass = $resourceConfig['resolved_form'] ?? null;
 
             $currentPath = trim($this->request->getPath(), '/');
             $version = RequestProcessor::extractVersion($currentPath);
@@ -126,10 +131,10 @@ class ApiController extends Controller
             try {
                 foreach ($items as $item) {
                     if ($formClass && class_exists($formClass)) {
-                        $itemRequest = clone $this->request;
-                        $itemRequest->setBody(json_encode($item));
+                        $originalBody = $this->request->getBody();
+                        $this->request->setBody(json_encode($item));
 
-                        $form = new $formClass($itemRequest);
+                        $form = new $formClass($this->request);
                         if (!$form->validate()) {
                             $invalidParams = [];
                             foreach ($form->getErrors() as $field => $error) {
@@ -145,6 +150,7 @@ class ApiController extends Controller
                             ]), 422);
                         }
                         $itemPayload = $form->validated()->toArray();
+                        $this->request->setBody($originalBody);
                     } else {
                         $itemPayload = $item;
                     }
@@ -179,6 +185,8 @@ class ApiController extends Controller
                 return $this->respondProblem($data['title'] ?? 'API Error', $e->getCode(), $data['detail'] ?? '', $data['invalid_params'] ?? []);
             }
             return $this->respondProblem('API Error', $e->getCode(), $e->getMessage());
+        } catch (PageNotFoundException $e) {
+            return $this->respondProblem('Not Found', 404, $e->getMessage());
         } catch (\Throwable $e) {
             $errors = json_decode($e->getMessage(), true);
             if (is_array($errors)) {
@@ -199,7 +207,7 @@ class ApiController extends Controller
     {
         try {
             $resourceConfig = RequestProcessor::process($resource, 'put', $this->request);
-            $formClass = $resourceConfig['form'] ?? null;
+            $formClass = $resourceConfig['resolved_form'] ?? null;
 
             $currentPath = trim($this->request->getPath(), '/');
             $version = RequestProcessor::extractVersion($currentPath);
@@ -235,10 +243,10 @@ class ApiController extends Controller
                     }
 
                     if ($formClass && class_exists($formClass)) {
-                        $itemRequest = clone $this->request;
-                        $itemRequest->setBody(json_encode($item));
+                        $originalBody = $this->request->getBody();
+                        $this->request->setBody(json_encode($item));
 
-                        $form = new $formClass($itemRequest);
+                        $form = new $formClass($this->request);
                         if (!$form->validate()) {
                             $invalidParams = [];
                             foreach ($form->getErrors() as $field => $error) {
@@ -254,6 +262,7 @@ class ApiController extends Controller
                             ]), 422);
                         }
                         $itemPayload = $form->validated()->toArray();
+                        $this->request->setBody($originalBody);
                     } else {
                         $itemPayload = $item;
                     }
@@ -289,6 +298,8 @@ class ApiController extends Controller
                 return $this->respondProblem($data['title'] ?? 'API Error', $e->getCode(), $data['detail'] ?? '', $data['invalid_params'] ?? []);
             }
             return $this->respondProblem('API Error', $e->getCode(), $e->getMessage());
+        } catch (PageNotFoundException $e) {
+            return $this->respondProblem('Not Found', 404, $e->getMessage());
         } catch (\Throwable $e) {
             $errors = json_decode($e->getMessage(), true);
             if (is_array($errors)) {
@@ -353,6 +364,8 @@ class ApiController extends Controller
             $version = RequestProcessor::extractVersion($currentPath);
             $spec = SwaggerGenerator::generate($version);
             return $this->respond($spec);
+        } catch (PageNotFoundException $e) {
+            return $this->respondProblem('Not Found', 404, $e->getMessage());
         } catch (\Throwable $e) {
             return $this->respondProblem('Internal Server Error', 500, $e->getMessage());
         }

@@ -35,7 +35,7 @@
   "resources": [
     {
       "class": "Jengo\\Api\\Support\\ResourceConfig",
-      "description": "Abstract base class for defining Jengo API policies, Sqids obfuscation rules, validation mappings, and lifecycle hooks.",
+      "description": "Abstract base class for defining Jengo API policies, Sqids obfuscation rules, validation mappings, and lifecycle hooks. NOTE: To obfuscate database primary/foreign keys (e.g. 'id' or 'user_id'), the database Entity must extend Jengo\\Base\\Entities\\BaseEntity and declare those fields inside its protected array $obfuscatedFields, and those same fields must be declared inside the ResourceConfig's protected array $obfuscatedFields.",
       "properties": {
         "exposedMethods": "array of allowed HTTP verbs (default: ['get', 'post', 'put', 'patch', 'delete'])",
         "formClass": "FormHandler class name to validate request body inputs",

@@ -68,6 +68,20 @@ class RequestProcessor
             throw new ApiException("Method '{$method}' is not allowed for resource '{$resource}'.", 405);
         }
 
+        $formConfig = $resourceConfig['form'] ?? null;
+        $resolvedForm = null;
+        if (is_array($formConfig)) {
+            $resolvedForm = $formConfig[$method] ?? $formConfig['*'] ?? null;
+        } elseif (is_string($formConfig)) {
+            $resolvedForm = $formConfig;
+        }
+        $resourceConfig['resolved_form'] = $resolvedForm;
+
+        $isWriteMethod = in_array($method, ['post', 'put', 'patch'], true);
+        if ($isWriteMethod && (empty($resolvedForm) || !class_exists($resolvedForm))) {
+            throw PageNotFoundException::forPageNotFound("Write method '{$method}' is not allowed for resource '{$resource}' as no validation FormHandler class is configured.");
+        }
+
         // 3. Authentication & Permission checks (CodeIgniter Shield support)
         $requiredAuth = $resourceConfig['required_auth'] ?? [];
         $authRule = $requiredAuth[$method] ?? $requiredAuth['*'] ?? null;
