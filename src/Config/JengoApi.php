@@ -29,4 +29,10 @@ class JengoApi extends BaseConfig
      * ];
      */
     public array $resources = [];
+
+    /**
+     * The view path to use for rendering the Swagger interactive UI.
+     * Overridable by developers for custom themes or layouts.
+     */
+    public string $swaggerView = 'Jengo\Api\Views\swagger_ui';
 }

@@ -387,8 +387,9 @@ class ApiController extends Controller
 
         $config = config('JengoApi');
         $apiName = $config->apiName ?? 'Jengo Auto-Generated API';
+        $viewName = $config->swaggerView ?? 'Jengo\Api\Views\swagger_ui';
 
-        return $this->response->setBody(view('Jengo\Api\Views\swagger_ui', [
+        return $this->response->setBody(view($viewName, [
             'jsonUrl' => $jsonUrl,
             'apiName' => $apiName
         ]));
