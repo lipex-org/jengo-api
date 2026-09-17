@@ -35,7 +35,7 @@ class SetupVariant implements CommandVariantInterface
     {
         CLI::write('Setting up Jengo API package...', 'cyan');
 
-        $force = CLI::getOption('force') !== null;
+        $force = array_key_exists('force', $params) || in_array('--force', $params, true) || CLI::getOption('force') !== null;
 
         $targetConfig = APPPATH . 'Config/JengoApi.php';
         // Locate source config file relative to this folder

@@ -106,7 +106,7 @@ class RequestProcessor
             $allowedRelations = $resourceConfig['allowed_relations'] ?? [];
             $maxLimit = $resourceConfig['max_limit'] ?? 100;
 
-            $getParams = $request->getGet();
+            $getParams = array_merge($_GET, $request->getGet() ?: []);
 
             if (isset($getParams['search']) && !in_array('search', $allowedCapabilities, true)) {
                 unset($_GET['search']);

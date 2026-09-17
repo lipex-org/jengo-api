@@ -427,6 +427,240 @@ namespace Tests\Feature {
             $forge->dropTable('temp_auth_table', true);
         }
 
+        public function testSingleUpdateAndDeleteLifecycle(): void
+        {
+            $forge = \Config\Database::forge('tests');
+            $forge->dropTable('temp_lifecycle_table', true);
+            $forge->addField([
+                'id' => ['type' => 'INTEGER', 'auto_increment' => true],
+                'title' => ['type' => 'VARCHAR', 'constraint' => 255],
+            ]);
+            $forge->addPrimaryKey('id');
+            $forge->createTable('temp_lifecycle_table', true);
+
+            $this->db->table('temp_lifecycle_table')->insert(['title' => 'Original Title']);
+            $insertedId = (string) $this->db->insertID();
+
+            $config = config('JengoApi');
+            $config->resources = [
+                TempLifecycleResource::class
+            ];
+
+            $controller = new \Jengo\Api\Controllers\ApiController();
+
+            // 1. Single PUT update by ID in URL
+            $putRequest = Services::request(null, false);
+            $putRequest->setMethod('PUT');
+            $putRequest->setBody(json_encode(['title' => 'Updated via PUT']));
+            $putRequest->setHeader('Content-Type', 'application/json');
+
+            $controller->initController($putRequest, Services::response(), Services::logger());
+            $response = $controller->update('temp_lifecycle_table', $insertedId);
+            $body = json_decode($response->getBody(), true);
+
+            $this->assertSame('success', $body['status']);
+            $this->assertSame('Updated via PUT', $body['data']['title']);
+
+            // 2. Single PATCH update by ID in body
+            $patchRequest = Services::request(null, false);
+            $patchRequest->setMethod('PATCH');
+            $patchRequest->setBody(json_encode(['id' => (int) $insertedId, 'title' => 'Patched via Payload']));
+            $patchRequest->setHeader('Content-Type', 'application/json');
+
+            $controller->initController($patchRequest, Services::response(), Services::logger());
+            $patchResponse = $controller->update('temp_lifecycle_table');
+            $patchBody = json_decode($patchResponse->getBody(), true);
+
+            $this->assertSame('success', $patchBody['status']);
+            $this->assertSame('Patched via Payload', $patchBody['data']['title']);
+
+            // 3. Update without ID anywhere -> 400 Bad Request
+            $noIdRequest = Services::request(null, false);
+            $noIdRequest->setMethod('PUT');
+            $noIdRequest->setBody(json_encode(['title' => 'No ID']));
+            $noIdRequest->setHeader('Content-Type', 'application/json');
+
+            $controller->initController($noIdRequest, Services::response(), Services::logger());
+            $noIdResponse = $controller->update('temp_lifecycle_table');
+            $this->assertSame(400, $noIdResponse->getStatusCode());
+
+            // 4. Update non-existent record -> 404
+            $notFoundPut = Services::request(null, false);
+            $notFoundPut->setMethod('PUT');
+            $notFoundPut->setBody(json_encode(['title' => 'Ghost']));
+            $notFoundPut->setHeader('Content-Type', 'application/json');
+
+            $controller->initController($notFoundPut, Services::response(), Services::logger());
+            $notFoundPutResp = $controller->update('temp_lifecycle_table', '99999');
+            $this->assertSame(404, $notFoundPutResp->getStatusCode());
+
+            // 5. Delete record by ID
+            $delRequest = Services::request(null, false);
+            $delRequest->setMethod('DELETE');
+            $controller->initController($delRequest, Services::response(), Services::logger());
+            $delResponse = $controller->delete('temp_lifecycle_table', $insertedId);
+
+            $this->assertSame(200, $delResponse->getStatusCode());
+            $this->assertSame(0, $this->db->table('temp_lifecycle_table')->countAllResults());
+
+            // 6. Delete already deleted / non-existent record -> 404
+            $del404Response = $controller->delete('temp_lifecycle_table', $insertedId);
+            $this->assertSame(404, $del404Response->getStatusCode());
+
+            $forge->dropTable('temp_lifecycle_table', true);
+        }
+
+        public function testValidationFailureRfc7807Format(): void
+        {
+            $forge = \Config\Database::forge('tests');
+            $forge->addField([
+                'id' => ['type' => 'INTEGER', 'auto_increment' => true],
+                'title' => ['type' => 'VARCHAR', 'constraint' => 255],
+            ]);
+            $forge->addPrimaryKey('id');
+            $forge->createTable('temp_failing_val_table', true);
+
+            $config = config('JengoApi');
+            $config->resources = [
+                TempFailingValResource::class
+            ];
+
+            $request = Services::request(null, false);
+            $request->setBody(json_encode(['title' => '']));
+            $request->setHeader('Content-Type', 'application/json');
+
+            $controller = new \Jengo\Api\Controllers\ApiController();
+            $controller->initController($request, Services::response(), Services::logger());
+
+            $response = $controller->create('temp_failing_val_table');
+            $body = json_decode($response->getBody(), true);
+
+            $this->assertSame(422, $response->getStatusCode());
+            $this->assertSame('Validation Failed', $body['title']);
+            $this->assertSame('about:blank', $body['type']);
+            $this->assertNotEmpty($body['invalid_params']);
+            $this->assertSame('title', $body['invalid_params'][0]['name']);
+
+            // Verify transaction was rolled back
+            $this->assertSame(0, $this->db->table('temp_failing_val_table')->countAllResults());
+
+            $forge->dropTable('temp_failing_val_table', true);
+        }
+
+        public function testSqidsObfuscationAcrossAllCrud(): void
+        {
+            $forge = \Config\Database::forge('tests');
+            $forge->dropTable('temp_sqids_crud', true);
+            $forge->addField([
+                'id' => ['type' => 'INTEGER', 'auto_increment' => true],
+                'title' => ['type' => 'VARCHAR', 'constraint' => 255],
+            ]);
+            $forge->addPrimaryKey('id');
+            $forge->createTable('temp_sqids_crud', true);
+
+            $this->db->table('temp_sqids_crud')->insert(['title' => 'Sqids Initial']);
+            $rowId = (int) $this->db->insertID();
+
+            $config = config('JengoApi');
+            $config->resources = [
+                TempSqidsCrudResource::class
+            ];
+
+            helper('jengo');
+            $hashedId = sqids_hash($rowId);
+
+            $controller = new \Jengo\Api\Controllers\ApiController();
+
+            // 1. Show by sqid hash
+            $controller->initController(Services::request(), Services::response(), Services::logger());
+            $showResp = $controller->show('temp_sqids_crud', $hashedId);
+            $showBody = json_decode($showResp->getBody(), true);
+            $this->assertSame('success', $showBody['status']);
+            $this->assertSame('Sqids Initial', $showBody['data']['title']);
+
+            // 2. Update by sqid hash in URL
+            $putReq = Services::request(null, false);
+            $putReq->setMethod('PUT');
+            $putReq->setBody(json_encode(['title' => 'Sqids Updated']));
+            $putReq->setHeader('Content-Type', 'application/json');
+
+            $controller->initController($putReq, Services::response(), Services::logger());
+            $putResp = $controller->update('temp_sqids_crud', $hashedId);
+            $putBody = json_decode($putResp->getBody(), true);
+            $this->assertSame('success', $putBody['status']);
+            $this->assertSame('Sqids Updated', $putBody['data']['title']);
+
+            // 3. Delete by sqid hash in URL
+            $delReq = Services::request(null, false);
+            $delReq->setMethod('DELETE');
+            $controller->initController($delReq, Services::response(), Services::logger());
+            $delResp = $controller->delete('temp_sqids_crud', $hashedId);
+            $this->assertSame(200, $delResp->getStatusCode());
+            $this->assertSame(0, $this->db->table('temp_sqids_crud')->countAllResults());
+
+            // 4. Invalid hash query does not trigger 500
+            $invalidShow = $controller->show('temp_sqids_crud', 'invalid-non-sqid');
+            $this->assertSame(404, $invalidShow->getStatusCode());
+
+            $forge->dropTable('temp_sqids_crud', true);
+        }
+
+        public function testBeforeAndAfterHooksExecution(): void
+        {
+            $forge = \Config\Database::forge('tests');
+            $forge->dropTable('temp_hooks_table', true);
+            $forge->addField([
+                'id' => ['type' => 'INTEGER', 'auto_increment' => true],
+                'title' => ['type' => 'VARCHAR', 'constraint' => 255],
+            ]);
+            $forge->addPrimaryKey('id');
+            $forge->createTable('temp_hooks_table', true);
+
+            $config = config('JengoApi');
+            $config->resources = [
+                TempHooksResource::class
+            ];
+
+            $controller = new \Jengo\Api\Controllers\ApiController();
+
+            // Create: beforeSave should uppercase title, afterSave should set after_save_flag
+            $req = Services::request(null, false);
+            $req->setBody(json_encode(['title' => 'lowercase title']));
+            $req->setHeader('Content-Type', 'application/json');
+
+            $controller->initController($req, Services::response(), Services::logger());
+            $resp = $controller->create('temp_hooks_table');
+            $body = json_decode($resp->getBody(), true);
+
+            $this->assertSame('success', $body['status']);
+            $this->assertSame('LOWERCASE TITLE', $body['data']['title']);
+            $this->assertTrue($body['data']['after_save_flag']);
+
+            $createdId = (string) ($body['data']['id'] ?? $this->db->insertID());
+
+            // Show: afterQuery should set after_query_flag
+            $showResp = $controller->show('temp_hooks_table', $createdId);
+            $showBody = json_decode($showResp->getBody(), true);
+            $this->assertSame('success', $showBody['status']);
+            $this->assertTrue($showBody['data']['after_query_flag']);
+
+            $forge->dropTable('temp_hooks_table', true);
+        }
+
+        public function testSetupCommandForceOption(): void
+        {
+            command('jengo:api setup');
+            $publishedConfig = APPPATH . 'Config/JengoApi.php';
+            $this->assertFileExists($publishedConfig);
+
+            // Modify the file to see if --force overwrites it
+            file_put_contents($publishedConfig, '<?php // Modified');
+            command('jengo:api setup --force');
+
+            $content = file_get_contents($publishedConfig);
+            $this->assertStringContainsString('class JengoApi extends BaseJengoApi', $content);
+        }
+
         private function cleanFileSystem(): void
         {
             $publishedConfig = APPPATH . 'Config/JengoApi.php';
@@ -561,6 +795,90 @@ namespace Tests\Feature {
         public function name(): string
         {
             return 'temp_array_form_table';
+        }
+    }
+
+    class TempLifecycleResource extends \Jengo\Api\Support\ResourceConfig
+    {
+        protected $formClass = MockFormHandler::class;
+
+        public function name(): string
+        {
+            return 'temp_lifecycle_table';
+        }
+    }
+
+    class FailingValidationFormHandler extends \Jengo\Base\Validation\FormHandler
+    {
+        public function validate(?\CodeIgniter\HTTP\RequestInterface $request = null): bool
+        {
+            $data = json_decode($this->request->getBody() ?: '{}', true);
+            if (empty($data['title'])) {
+                $this->errors = ['title' => 'The title field is required.'];
+                return false;
+            }
+            return true;
+        }
+
+        public function validated(): \Jengo\Base\Validation\ValidatedData
+        {
+            $data = json_decode($this->request->getBody() ?: '{}', true);
+            return new \Jengo\Base\Validation\ValidatedData([], [], $data);
+        }
+    }
+
+    class TempFailingValResource extends \Jengo\Api\Support\ResourceConfig
+    {
+        protected $formClass = FailingValidationFormHandler::class;
+
+        public function name(): string
+        {
+            return 'temp_failing_val_table';
+        }
+    }
+
+    class TempSqidsCrudResource extends \Jengo\Api\Support\ResourceConfig
+    {
+        protected $formClass = MockFormHandler::class;
+        protected array $obfuscatedFields = ['id'];
+
+        public function name(): string
+        {
+            return 'temp_sqids_crud';
+        }
+    }
+
+    class TempHooksResource extends \Jengo\Api\Support\ResourceConfig
+    {
+        protected $formClass = MockFormHandler::class;
+
+        public function name(): string
+        {
+            return 'temp_hooks_table';
+        }
+
+        public function beforeSave(array $data, ?\Jengo\Api\Support\HookContext $context = null): array
+        {
+            if (isset($data['title'])) {
+                $data['title'] = strtoupper($data['title']);
+            }
+            return $data;
+        }
+
+        public function afterSave(array $record, ?\Jengo\Api\Support\HookContext $context = null): array
+        {
+            $record['after_save_flag'] = true;
+            return $record;
+        }
+
+        public function afterQuery(array $data, ?\Jengo\Api\Support\HookContext $context = null): array
+        {
+            foreach ($data as $row) {
+                if (is_object($row)) {
+                    $row->after_query_flag = true;
+                }
+            }
+            return $data;
         }
     }
 }

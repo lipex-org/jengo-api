@@ -110,11 +110,19 @@ class SwaggerGenerator
                 'properties' => $properties,
             ];
 
-            // Add resource-level Swagger tag
-            $openapi['tags'][] = [
-                'name' => $schemaName,
-                'description' => "Operations related to the {$name} resource.",
-            ];
+            $hasTag = false;
+            foreach ($openapi['tags'] as $existingTag) {
+                if (($existingTag['name'] ?? null) === $schemaName) {
+                    $hasTag = true;
+                    break;
+                }
+            }
+            if (!$hasTag) {
+                $openapi['tags'][] = [
+                    'name' => $schemaName,
+                    'description' => "Operations related to the {$name} resource.",
+                ];
+            }
 
             $prefix = $version ? "/{$version}" : '';
             $listPath = "{$prefix}/{$name}";
@@ -271,46 +279,47 @@ class SwaggerGenerator
                 ];
             }
 
-            if (in_array('put', $exposedMethods, true) || in_array('patch', $exposedMethods, true)) {
-                $methodKey = in_array('put', $exposedMethods, true) ? 'put' : 'patch';
-                $openapi['paths'][$itemPath][$methodKey] = [
-                    'tags' => [$schemaName],
-                    'summary' => "Update an existing {$name} record by ID",
-                    'parameters' => [
-                        [
-                            'name' => 'id',
-                            'in' => 'path',
-                            'required' => true,
-                            'schema' => ['type' => 'string'],
-                        ],
-                    ],
-                    'requestBody' => [
-                        'required' => true,
-                        'content' => [
-                            'application/json' => [
-                                'schema' => [
-                                    '$ref' => "#/components/schemas/{$schemaName}",
-                                ],
+            foreach (['put', 'patch'] as $httpMethod) {
+                if (in_array($httpMethod, $exposedMethods, true)) {
+                    $openapi['paths'][$itemPath][$httpMethod] = [
+                        'tags' => [$schemaName],
+                        'summary' => "Update an existing {$name} record by ID (" . strtoupper($httpMethod) . ")",
+                        'parameters' => [
+                            [
+                                'name' => 'id',
+                                'in' => 'path',
+                                'required' => true,
+                                'schema' => ['type' => 'string'],
                             ],
                         ],
-                    ],
-                    'responses' => [
-                        '200' => [
-                            'description' => 'Updated successfully',
+                        'requestBody' => [
+                            'required' => true,
                             'content' => [
                                 'application/json' => [
                                     'schema' => [
-                                        'type' => 'object',
-                                        'properties' => [
-                                            'status' => ['type' => 'string', 'example' => 'success'],
-                                            'data' => ['$ref' => "#/components/schemas/{$schemaName}"],
+                                        '$ref' => "#/components/schemas/{$schemaName}",
+                                    ],
+                                ],
+                            ],
+                        ],
+                        'responses' => [
+                            '200' => [
+                                'description' => 'Updated successfully',
+                                'content' => [
+                                    'application/json' => [
+                                        'schema' => [
+                                            'type' => 'object',
+                                            'properties' => [
+                                                'status' => ['type' => 'string', 'example' => 'success'],
+                                                'data' => ['$ref' => "#/components/schemas/{$schemaName}"],
+                                            ],
                                         ],
                                     ],
                                 ],
                             ],
                         ],
-                    ],
-                ];
+                    ];
+                }
             }
 
             if (in_array('delete', $exposedMethods, true)) {

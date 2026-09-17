@@ -74,7 +74,8 @@ class ApiController extends Controller
             $instance = $this->getResourceInstance($resource);
             if ($instance && in_array('id', $instance->obfuscatedFields(), true)) {
                 helper('jengo');
-                $id = (string) sqids_unhash($id);
+                $unhashed = sqids_unhash($id);
+                $id = $unhashed !== null ? (string) $unhashed : $id;
             }
 
             $query = query($resource)->open($resourceConfig['capabilities'] ?? []);
@@ -234,12 +235,31 @@ class ApiController extends Controller
                                 'detail' => 'Each item in a bulk update batch must contain an ID.'
                             ]), 400);
                         }
+                    } else {
+                        if ($itemId === null && isset($item['id'])) {
+                            $itemId = (string) $item['id'];
+                        }
+                        if ($itemId === null || $itemId === '') {
+                            throw new ApiException(json_encode([
+                                'title' => 'Missing ID',
+                                'detail' => 'Resource ID must be specified in the URL or payload for updates.'
+                            ]), 400);
+                        }
                     }
 
                     $instance = $this->getResourceInstance($resource);
                     if ($instance && in_array('id', $instance->obfuscatedFields(), true)) {
                         helper('jengo');
-                        $itemId = (string) sqids_unhash((string) $itemId);
+                        $unhashed = sqids_unhash((string) $itemId);
+                        $itemId = $unhashed !== null ? (string) $unhashed : (string) $itemId;
+                    }
+
+                    if (!$isBulk) {
+                        $existing = query($resource)->find($itemId);
+                        if ($existing === null) {
+                            $db->transRollback();
+                            return $this->respondProblem('Resource Not Found', 404, "Resource {$resource} with ID {$itemId} not found.");
+                        }
                     }
 
                     if ($formClass && class_exists($formClass)) {
@@ -324,7 +344,13 @@ class ApiController extends Controller
             $instance = $this->getResourceInstance($resource);
             if ($instance && in_array('id', $instance->obfuscatedFields(), true)) {
                 helper('jengo');
-                $id = (string) sqids_unhash($id);
+                $unhashed = sqids_unhash($id);
+                $id = $unhashed !== null ? (string) $unhashed : $id;
+            }
+
+            $existing = query($resource)->find($id);
+            if ($existing === null) {
+                return $this->respondProblem('Resource Not Found', 404, "Resource {$resource} with ID {$id} not found.");
             }
 
             $metadata = SchemaReflector::reflect($resource);
@@ -449,7 +475,7 @@ class ApiController extends Controller
                     $childPayload = $relationPayloads[$relation->name];
                     if (is_array($childPayload)) {
                         $childId = $childPayload['id'] ?? null;
-                        $childResource = $relation->name;
+                        $childResource = !empty($relation->schemaClass) ? $relation->schemaClass : $relation->name;
 
                         $childId = $this->saveResource($childResource, $childPayload, $childId);
                         $payload[$relation->fromField] = $childId;
@@ -474,7 +500,7 @@ class ApiController extends Controller
             foreach ($relations as $relation) {
                 if ($relation->type === \Jengo\Schema\Metadata\RelationMetadata::HAS_MANY && isset($relationPayloads[$relation->name])) {
                     $childPayloads = $relationPayloads[$relation->name];
-                    $childResource = $relation->name;
+                    $childResource = !empty($relation->schemaClass) ? $relation->schemaClass : $relation->name;
 
                     if (is_array($childPayloads)) {
                         $items = isset($childPayloads[0]) && is_array($childPayloads[0]) ? $childPayloads : [$childPayloads];
