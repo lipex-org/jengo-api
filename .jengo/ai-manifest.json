@@ -1,6 +1,13 @@
 {
   "name": "jengo/api",
-  "description": "Automated REST API engine for the Jengo framework. Provides automatic CRUD routing, OpenAPI/Swagger generation, transactional relationship mutations, dynamic FormHandler payload validations, Sqids-based URL ID obfuscation, version namespace prefix grouping, and CodeIgniter Shield authentication integration.",
+  "description": "Automated REST API engine for the Jengo framework. Provides automatic CRUD routing, OpenAPI/Swagger generation, transactional relationship mutations, dynamic FormHandler payload validations, Sqids-based URL ID obfuscation, version namespace prefix grouping, standardized API envelope attributes, and CodeIgniter Shield authentication integration.",
+  "attributes": [
+    {
+      "class": "Jengo\\Api\\Attributes\\API",
+      "description": "Controller class or method Attribute that wraps output into a standardized JSON response envelope containing status, message, data, or errors.",
+      "usage": "#[API]\npublic function show($id) { return ['user' => $user]; }"
+    }
+  ],
   "routing": [
     {
       "class": "Jengo\\Api\\Router",
@@ -72,12 +79,23 @@
   ],
   "commands": [
     {
+      "name": "jengo:install api",
+      "description": "Publishes JengoApi configuration class and registers API routes in app/Config/Routes.php."
+    },
+    {
       "name": "jengo:api setup",
       "description": "Initial setup command for the API package. Publishes the JengoApi configuration class inheriting from BaseJengoApi and registers routes inside app/Config/Routes.php."
     },
     {
       "name": "jengo:make api_resource <name>",
       "description": "Generates a new ResourceConfig class boilerplate, with full support for CodeIgniter code modules."
+    }
+  ],
+  "installers": [
+    {
+      "class": "Jengo\\Api\\Installers\\ApiInstaller",
+      "command": "php spark jengo:install api",
+      "description": "Publishes JengoApi configuration class inheriting from BaseJengoApi and registers routes inside app/Config/Routes.php."
     }
   ]
 }
