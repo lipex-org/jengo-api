@@ -11,30 +11,10 @@
   ],
   "require": {
     "php": "^8.2",
-    "codeigniter4/framework": "^4.6|^4.7",
-    "jengo/base": "^1.1 || dev-main",
-    "jengo/schema": "^1.0 || dev-main"
+    "codeigniter4/framework": "^4.7",
+    "jengo/base": "^1.1",
+    "jengo/schema": "^1.0"
   },
-  "repositories": [
-    {
-      "type": "path",
-      "url": "../base",
-      "options": {
-        "versions": {
-          "jengo/base": "1.1.99"
-        }
-      }
-    },
-    {
-      "type": "path",
-      "url": "../schema",
-      "options": {
-        "versions": {
-          "jengo/schema": "1.0.99"
-        }
-      }
-    }
-  ],
   "autoload": {
     "psr-4": {
       "Jengo\\Api\\": "src/"
