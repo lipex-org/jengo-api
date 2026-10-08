@@ -1,6 +1,6 @@
 <p align="center">
   <a href="https://lipex-org.github.io/jengophp.com/">
-    <img src="https://raw.githubusercontent.com/lipex-org/docs/main/public/logo-full.png" width="220" alt="Jengo Logo">
+    <img src="https://raw.githubusercontent.com/lipex-org/jengophp.com/main/public/logo-full.png" width="220" alt="Jengo Logo">
   </a>
 </p>
 
