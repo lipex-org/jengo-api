@@ -6,19 +6,23 @@ namespace Jengo\Api\Controllers;
 
 use CodeIgniter\API\ResponseTrait;
 use CodeIgniter\Controller;
+use CodeIgniter\Exceptions\PageNotFoundException;
 use Jengo\Api\Contracts\ResourceConfigInterface;
 use Jengo\Api\Exceptions\ApiException;
 use Jengo\Api\Services\RequestProcessor;
 use Jengo\Api\Services\SwaggerGenerator;
 use Jengo\Api\Support\HookContext;
+use Jengo\Base\Container\Container;
+use Jengo\Base\Container\Traits\HasContainer;
 use Jengo\Schema\Reflection\SchemaReflector;
-use CodeIgniter\Exceptions\PageNotFoundException;
 use Throwable;
 use function Jengo\Schema\query;
 
 class ApiController extends Controller
 {
     use ResponseTrait;
+    use HasContainer;
+
     protected $format = 'json';
 
     public function index(string $resource)
@@ -430,7 +434,7 @@ class ApiController extends Controller
         $config = config('JengoApi');
         foreach ($config->resources as $resClass) {
             if (class_exists($resClass)) {
-                $resObj = new $resClass();
+                $resObj = Container::getInstance()->make($resClass);
                 if ($resObj instanceof ResourceConfigInterface && $resObj->name() === $resource) {
                     if (RequestProcessor::matchVersion($resObj->version(), $version)) {
                         return $resObj;
@@ -453,7 +457,7 @@ class ApiController extends Controller
             throw new \RuntimeException("No model class associated with schema {$resource}");
         }
 
-        $model = new $modelClass();
+        $model = Container::getInstance()->make($modelClass);
         $relations = $metadata->relations;
 
         // Separate relation payloads from main attributes
